@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Language Learning - Speech Practice</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/styles.css') }}" />
+    <script>
+      console.log("HTML loaded, about to load JS files");
+    </script>
+  </head>
+  <body>
+    <div class="container">
+      <section class="passage-section">
+        <h2>Text To Read</h2>
+        <div class="passage-box">
+          <p id="passage-text">{{ passage }}</p>
+        </div>
+        <div class="controls">
+          <button
+            id="read-btn"
+            class="control-btn"
+            onclick="alert('Read button clicked')">
+            Read To Me
+          </button>
+          <button
+            id="restart-btn"
+            class="control-btn"
+            onclick="alert('Restart button clicked')">
+            Restart
+          </button>
+          <button
+            id="practice-btn"
+            class="control-btn"
+            onclick="alert('Practice button clicked')">
+            Practice
+          </button>
+        </div>
+      </section>
+
+      <section class="feedback-section">
+        <h2>Feedback</h2>
+        <div class="feedback-box">
+          <div class="recording-container">
+            <p>Practice recording</p>
+            <div class="audio-player">
+              <button class="play-btn" onclick="alert('Play button clicked')">
+                ▶
+              </button>
+              <div class="progress-bar">
+                <div class="progress"></div>
+              </div>
+              <button class="mute-btn" onclick="alert('Mute button clicked')">
+                🔊
+              </button>
+            </div>
+          </div>
+          <div class="feedback-content">
+            <p id="feedback-text">
+              Your pronunciation of the word practice is off, and ...
+            </p>
+          </div>
+          <div id="feedback-history" class="feedback-history"></div>
+        </div>
+      </section>
+
+      <section
+        id="debug-section"
+        style="
+          margin-top: 30px;
+          padding: 20px;
+          border: 1px solid #ccc;
+          background-color: #f9f9f9;
+        ">
+        <h3>Debug Tools</h3>
+        <p>
+          If the app isn't working properly, use these buttons to test the
+          JavaScript modules:
+        </p>
+        <div style="margin-top: 10px">
+          <button
+            onclick="window.testTextHighlighter && window.testTextHighlighter()">
+            Test TextHighlighter
+          </button>
+          <button
+            onclick="window.testAudioRecorder && window.testAudioRecorder()">
+            Test AudioRecorder
+          </button>
+          <button
+            onclick="window.fetch('/generate-speech', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({passage: 'Test'})}).then(r => r.json()).then(data => alert('API Test: ' + (data.success ? 'Success' : 'Failed'))).catch(e => alert('API Error: ' + e))">
+            Test API
+          </button>
+        </div>
+        <div style="margin-top: 10px">
+          <button
+            onclick="document.getElementById('debug-log').style.display = 'block'">
+            Show Console Logs
+          </button>
+          <div
+            id="debug-log"
+            style="
+              display: none;
+              max-height: 200px;
+              overflow-y: auto;
+              padding: 10px;
+              background: #000;
+              color: #0f0;
+              font-family: monospace;
+              margin-top: 10px;
+            "></div>
+        </div>
+        <script>
+          // Capture console.log and show in debug section
+          (function () {
+            var oldLog = console.log;
+            console.log = function (message) {
+              oldLog.apply(console, arguments);
+              var debugLog = document.getElementById("debug-log");
+              if (debugLog) {
+                debugLog.innerHTML += message + "<br>";
+                debugLog.scrollTop = debugLog.scrollHeight;
+              }
+            };
+          })();
+        </script>
+        <button onclick="testHighlighting()">Test Highlighting</button>
+      </section>
+    </div>
+
+    <!-- Include JavaScript modules -->
+    <script>
+      // Global error handler
+      window.onerror = function (message, source, lineno, colno, error) {
+        console.log("Error: " + message + " at " + source + ":" + lineno);
+        document.getElementById("debug-log").style.display = "block";
+        return false;
+      };
+    </script>
+    <script src="{{ url_for('static', filename='js/text-highlighter.js') }}"></script>
+    <script>
+      console.log("TextHighlighter loaded:", typeof TextHighlighter);
+    </script>
+
+    <script src="{{ url_for('static', filename='js/audio-recorder.js') }}"></script>
+    <script>
+      console.log("AudioRecorder loaded:", typeof AudioRecorder);
+    </script>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+      console.log("main.js loaded");
+    </script>
+  </body>
+</html>
