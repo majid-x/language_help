@@ -14,12 +14,14 @@ function initApp() {
   const playBtn = document.querySelector(".play-btn");
   const muteBtn = document.querySelector(".mute-btn");
   const progressBar = document.querySelector(".progress");
+  const testHighlighterBtn = document.getElementById("test-highlighter-btn");
 
   console.log("DOM elements found:", {
     passageText: !!passageText,
     readBtn: !!readBtn,
     restartBtn: !!restartBtn,
     practiceBtn: !!practiceBtn,
+    testHighlighterBtn: !!testHighlighterBtn,
   });
 
   // Global variables
@@ -30,9 +32,13 @@ function initApp() {
 
   // Try to initialize text highlighter and audio recorder
   try {
-    if (typeof TextHighlighter !== "undefined") {
+    if (window.TextHighlighter) {
       console.log("TextHighlighter found, initializing...");
-      TextHighlighter.initialize(passageText, [], onHighlightingComplete);
+      window.TextHighlighter.initialize(
+        passageText,
+        [],
+        onHighlightingComplete
+      );
       console.log("TextHighlighter initialized successfully");
     } else {
       console.error("TextHighlighter is not defined");
@@ -51,26 +57,66 @@ function initApp() {
   // Set up event listeners
   if (readBtn) {
     readBtn.addEventListener("click", handleReadClick);
-    readBtn.onclick = null; // Remove inline handler
   }
   if (restartBtn) {
     restartBtn.addEventListener("click", handleRestartClick);
-    restartBtn.onclick = null; // Remove inline handler
   }
   if (practiceBtn) {
     practiceBtn.addEventListener("click", handlePracticeClick);
-    practiceBtn.onclick = null; // Remove inline handler
   }
   if (playBtn) {
     playBtn.addEventListener("click", togglePlayback);
-    playBtn.onclick = null; // Remove inline handler
   }
   if (muteBtn) {
     muteBtn.addEventListener("click", toggleMute);
-    muteBtn.onclick = null; // Remove inline handler
+  }
+  if (testHighlighterBtn) {
+    testHighlighterBtn.addEventListener("click", testTextHighlighter);
   }
 
   console.log("Event listeners attached");
+
+  // Function to test TextHighlighter
+  function testTextHighlighter() {
+    console.log("Testing TextHighlighter...");
+
+    if (!passageText) {
+      console.error("No passage element found");
+      alert("Error: No passage element found");
+      return;
+    }
+
+    // Create test timing data
+    const testTimings = [];
+    const text = passageText.textContent;
+    for (let i = 0; i < text.length; i++) {
+      testTimings.push({
+        char: text[i],
+        char_index: i,
+        start_time: i * 0.1,
+        end_time: (i + 1) * 0.1,
+      });
+    }
+
+    console.log("Created test timing data:", testTimings.length);
+
+    // Initialize with test data
+    if (window.TextHighlighter) {
+      window.TextHighlighter.initialize(passageText, testTimings, () => {
+        console.log("Test highlighting complete");
+        alert("Test highlighting complete");
+      });
+
+      // Start highlighting
+      window.TextHighlighter.startHighlighting();
+
+      console.log("Test highlighting started");
+      alert("Test highlighting started");
+    } else {
+      console.error("TextHighlighter is not available");
+      alert("TextHighlighter is not available");
+    }
+  }
 
   // Handler when highlighting is complete
   function onHighlightingComplete() {
@@ -156,6 +202,11 @@ function initApp() {
     console.log("Text to process:", text);
 
     try {
+      // Show we're processing
+      if (passageText) {
+        passageText.style.opacity = "0.5";
+      }
+
       // Generate speech from the server
       const response = await fetch("/generate-speech", {
         method: "POST",
@@ -174,8 +225,17 @@ function initApp() {
         firstTiming: data.char_timings ? data.char_timings[0] : null,
       });
 
+      // Restore opacity
+      if (passageText) {
+        passageText.style.opacity = "1";
+      }
+
       if (data.success) {
         console.log("Speech generated successfully");
+
+        // Log full timing data for debugging
+        console.log("Complete timing data:", data.char_timings);
+        console.log("First few timings:", data.char_timings.slice(0, 5));
 
         // Create audio element and load the generated speech
         if (audioElement) {
@@ -183,52 +243,105 @@ function initApp() {
           audioElement.remove();
         }
 
-        audioElement = new Audio(data.audio_url);
+        // Create a completely new audio element
+        audioElement = new Audio();
+        audioElement.src = data.audio_url;
+        audioElement.crossOrigin = "anonymous";
         console.log("Created audio element with URL:", data.audio_url);
 
-        // Update the text highlighter with timing data
-        if (TextHighlighter && TextHighlighter.initialize) {
-          console.log("Initializing TextHighlighter with timing data");
-          TextHighlighter.initialize(
-            passageText,
-            data.char_timings,
-            onHighlightingComplete
-          );
+        // Prepare the passage for highlighting by creating character spans
+        if (passageText) {
+          passageText.innerHTML = "";
+          const chars = text.split("");
+          chars.forEach((char, i) => {
+            const span = document.createElement("span");
+            span.textContent = char === " " ? "\u00A0" : char;
+            span.classList.add("char");
+            span.dataset.index = i;
+            passageText.appendChild(span);
+          });
+          console.log("Prepared spans for highlighting");
         }
 
-        // Set up audio events
-        audioElement.addEventListener("play", () => {
-          console.log("Audio playback started");
-          if (TextHighlighter && TextHighlighter.startHighlighting) {
-            console.log("Starting text highlighting");
-            TextHighlighter.startHighlighting();
-          } else {
-            console.error("TextHighlighter.startHighlighting not available");
-          }
-        });
+        // DIRECT HIGHLIGHTING TEST - highlight the first 5 characters directly
+        // This will verify if the spans can be highlighted properly
+        //if (data.char_timings && data.char_timings.length > 0) {
+        //  console.log("Testing direct highlighting of first few characters");
+        //  const charSpans = passageText.querySelectorAll(".char");
 
-        audioElement.addEventListener("pause", () => {
-          console.log("Audio playback paused");
-          if (TextHighlighter && TextHighlighter.pause) {
-            TextHighlighter.pause();
-          }
-        });
+        // Clear any previous highlights
+        //charSpans.forEach((span) => span.classList.remove("highlighted"));
 
-        audioElement.addEventListener("ended", () => {
-          console.log("Audio playback ended");
-          currentMode = "idle";
-          if (TextHighlighter && TextHighlighter.reset) {
-            TextHighlighter.reset();
-          }
-        });
+        // Try highlighting the first few characters
+        //for (let i = 0; i < 5 && i < data.char_timings.length; i++) {
+        //const timing = data.char_timings[i];
+        // const index = timing.char_index;
 
-        // Play the audio
-        audioElement.play().catch((e) => {
-          console.error("Error playing audio:", e);
-          alert(
-            "Error playing audio. Make sure you're using a modern browser and have granted audio permissions."
+        //if (index < charSpans.length) {
+        //setTimeout(() => {
+        //  console.log(
+        //    `Directly highlighting char ${index}: ${charSpans[index].textContent}`
+        //  );
+        //  charSpans[index].classList.add("highlighted");
+        //}, (i + 1) * 500); // Highlight every 500ms
+        //}
+        //}
+        //}
+
+        // Set up audio with timing-based highlighting
+        audioElement.addEventListener("loadedmetadata", () => {
+          console.log(
+            "Audio metadata loaded, duration:",
+            audioElement.duration
           );
+
+          // Now that the audio is loaded, set up the event listeners
+          audioElement.addEventListener("play", () => {
+            console.log("Audio play event fired");
+
+            // Set up the timing-based highlighting
+            const charSpans = passageText.querySelectorAll(".char");
+
+            // Clear any previous highlights and timeouts
+            if (window.highlightTimeouts) {
+              window.highlightTimeouts.forEach((timeout) =>
+                clearTimeout(timeout)
+              );
+            }
+            window.highlightTimeouts = [];
+
+            charSpans.forEach((span) => span.classList.remove("highlighted"));
+
+            // Set up timeouts for each character based on timing data
+            data.char_timings.forEach((timing) => {
+              const index = timing.char_index;
+              const startTime = timing.start_time * 1000; // Convert to ms
+
+              if (index < charSpans.length) {
+                const timeout = setTimeout(() => {
+                  charSpans[index].classList.add("highlighted");
+                }, startTime);
+
+                window.highlightTimeouts.push(timeout);
+              }
+            });
+          });
+
+          // Play the audio
+          audioElement.play().catch((error) => {
+            console.error("Error playing audio:", error);
+          });
         });
+
+        // Fallback if loadedmetadata doesn't fire
+        setTimeout(() => {
+          if (audioElement && audioElement.paused) {
+            console.log("Fallback: Playing audio after timeout");
+            audioElement
+              .play()
+              .catch((e) => console.error("Error in fallback play:", e));
+          }
+        }, 1000);
       } else {
         console.error("Error generating speech:", data.error);
         alert("Error generating speech. Please try again.");
@@ -238,6 +351,10 @@ function initApp() {
       console.error("Error:", error);
       alert("An error occurred. Please try again.");
       currentMode = "idle";
+      // Restore opacity
+      if (passageText) {
+        passageText.style.opacity = "1";
+      }
     }
 
     return false;
@@ -248,9 +365,25 @@ function initApp() {
     console.log("Restart button clicked");
     if (e) e.preventDefault();
 
+    // Reset playback
     resetPlayback();
-    if (TextHighlighter && TextHighlighter.reset) TextHighlighter.reset();
 
+    // Clear any highlight timeouts
+    if (window.highlightTimeouts) {
+      window.highlightTimeouts.forEach((timeout) => clearTimeout(timeout));
+      window.highlightTimeouts = [];
+    }
+
+    // Remove all highlighting from characters
+    const charSpans = document.querySelectorAll(".char");
+    charSpans.forEach((span) => span.classList.remove("highlighted"));
+
+    // Reset TextHighlighter if available (for backward compatibility)
+    if (TextHighlighter && TextHighlighter.reset) {
+      TextHighlighter.reset();
+    }
+
+    // Stop recording if active
     if (AudioRecorder && AudioRecorder.isActive && AudioRecorder.isActive()) {
       AudioRecorder.stopRecording();
     }

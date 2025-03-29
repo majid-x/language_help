@@ -19,23 +19,13 @@
           <p id="passage-text">{{ passage }}</p>
         </div>
         <div class="controls">
+          <button id="read-btn" class="control-btn">Read To Me</button>
+          <button id="restart-btn" class="control-btn">Restart</button>
+          <button id="practice-btn" class="control-btn">Practice</button>
           <button
-            id="read-btn"
-            class="control-btn"
-            onclick="alert('Read button clicked')">
-            Read To Me
-          </button>
-          <button
-            id="restart-btn"
-            class="control-btn"
-            onclick="alert('Restart button clicked')">
-            Restart
-          </button>
-          <button
-            id="practice-btn"
-            class="control-btn"
-            onclick="alert('Practice button clicked')">
-            Practice
+            id="direct-test-btn"
+            onclick="window.directTestHighlight && window.directTestHighlight()">
+            Direct Test
           </button>
         </div>
       </section>
@@ -46,15 +36,11 @@
           <div class="recording-container">
             <p>Practice recording</p>
             <div class="audio-player">
-              <button class="play-btn" onclick="alert('Play button clicked')">
-                ▶
-              </button>
+              <button class="play-btn">▶</button>
               <div class="progress-bar">
                 <div class="progress"></div>
               </div>
-              <button class="mute-btn" onclick="alert('Mute button clicked')">
-                🔊
-              </button>
+              <button class="mute-btn">🔊</button>
             </div>
           </div>
           <div class="feedback-content">
@@ -80,10 +66,8 @@
           JavaScript modules:
         </p>
         <div style="margin-top: 10px">
-          <button
-            onclick="window.testTextHighlighter && window.testTextHighlighter()">
-            Test TextHighlighter
-          </button>
+          <button id="test-highlighter-btn">Test TextHighlighter</button>
+          <button id="test-simple-highlight-btn">Test Simple Highlight</button>
           <button
             onclick="window.testAudioRecorder && window.testAudioRecorder()">
             Test AudioRecorder
@@ -119,13 +103,16 @@
               oldLog.apply(console, arguments);
               var debugLog = document.getElementById("debug-log");
               if (debugLog) {
-                debugLog.innerHTML += message + "<br>";
+                var logMessage =
+                  typeof message === "object"
+                    ? JSON.stringify(message)
+                    : message;
+                debugLog.innerHTML += logMessage + "<br>";
                 debugLog.scrollTop = debugLog.scrollHeight;
               }
             };
           })();
         </script>
-        <button onclick="testHighlighting()">Test Highlighting</button>
       </section>
     </div>
 
@@ -151,6 +138,44 @@
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
       console.log("main.js loaded");
+
+      // Add a simple direct test for highlighting
+      document
+        .getElementById("test-simple-highlight-btn")
+        .addEventListener("click", function () {
+          console.log("Running simple highlight test");
+          const passageElement = document.getElementById("passage-text");
+          if (!passageElement) {
+            console.error("No passage element found");
+            return;
+          }
+
+          // First, let's make sure the passage is wrapped in spans
+          const text = passageElement.textContent;
+          let spanContent = "";
+          for (let i = 0; i < text.length; i++) {
+            spanContent += `<span class="char">${text[i]}</span>`;
+          }
+          passageElement.innerHTML = spanContent;
+
+          // Now let's highlight each character in sequence
+          const chars = passageElement.querySelectorAll(".char");
+          let index = 0;
+
+          function highlightNext() {
+            if (index > 0) {
+              chars[index - 1].classList.remove("highlighted");
+            }
+
+            if (index < chars.length) {
+              chars[index].classList.add("highlighted");
+              index++;
+              setTimeout(highlightNext, 100);
+            }
+          }
+
+          highlightNext();
+        });
     </script>
   </body>
 </html>

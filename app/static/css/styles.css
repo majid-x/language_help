@@ -51,10 +51,6 @@ h2 {
   z-index: 0;
 }
 
-.highlighted {
-  color: #2a7ae2;
-}
-
 .controls {
   display: flex;
   justify-content: space-between;
@@ -169,23 +165,24 @@ h2 {
 /* Highlighting styles */
 .char {
   display: inline-block;
-  transition: all 0.1s ease;
-  padding: 0 1px;
   position: relative;
-  min-width: 1em;
-  text-align: center;
+  transition: background-color 0.2s ease;
+  padding: 0 1px;
+  min-width: 4px;
+  border: 1px solid rgba(200, 200, 200, 0.1);
 }
 
 .char.highlighted {
-  color: #2a7ae2;
-  background-color: rgba(42, 122, 226, 0.3);
+  background-color: yellow;
+  color: #000;
   border-radius: 2px;
   font-weight: bold;
-  text-shadow: 0 0 1px rgba(42, 122, 226, 0.5);
-  box-shadow: 0 0 2px rgba(42, 122, 226, 0.3);
-  z-index: 1;
+  box-shadow: 0 0 3px rgba(255, 255, 0, 0.7);
+  transform: scale(1.1);
+  z-index: 2;
 }
 
-.char.highlight {
-  background-color: yellow;
+/* Add an outline for debugging */
+#direct-test-debug .char {
+  border: 1px solid rgba(0, 0, 255, 0.2);
 }

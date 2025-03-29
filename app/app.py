@@ -33,29 +33,51 @@ def index():
 def generate_speech():
     try:
         passage = request.json.get('passage', SAMPLE_PASSAGE)
-        #print(f"Received request to generate speech for passage: {passage[:50]}...")
+        print(f"Received request to generate speech for passage: {passage[:50]}...")
         
         # Use the ElevenLabs service to generate speech with timestamps
         output_path = os.path.join(os.path.dirname(__file__), 'static', 'audio', 'speech.mp3')
-        #print(f"Output path: {output_path}")
+        print(f"Output path: {output_path}")
         
         result = elevenlabs_service.generate_speech_with_timestamps(
             text=passage,
             output_path=output_path
         )
         
-        #print(f"ElevenLabs service result: {result}")
+        print(f"ElevenLabs service result received")
         
         if result["success"]:
             # Ensure timing data is in the correct format
             char_timings = result.get("char_timings", [])
-            #print(f"Number of character timings: {len(char_timings)}")
-            #print("Sample timing data:", char_timings[:5] if char_timings else None)
+            print(f"Number of character timings: {len(char_timings)}")
+            
+            # Validate each timing object to ensure it has all required fields
+            valid_timings = []
+            for timing in char_timings:
+                if not isinstance(timing, dict):
+                    print(f"Warning: Invalid timing object (not a dict): {timing}")
+                    continue
+                    
+                if all(key in timing for key in ['char', 'char_index', 'start_time', 'end_time']):
+                    # Convert to proper types
+                    timing['char_index'] = int(timing['char_index'])
+                    timing['start_time'] = float(timing['start_time'])
+                    timing['end_time'] = float(timing['end_time'])
+                    valid_timings.append(timing)
+                else:
+                    print(f"Warning: Timing object missing required fields: {timing}")
+            
+            print(f"Valid timings: {len(valid_timings)}")
+            print("Sample timing data:", valid_timings[:5] if valid_timings else None)
+            
+            # Add a cache-busting parameter to the audio URL
+            import time
+            audio_url = f"/static/audio/speech.mp3?t={int(time.time())}"
             
             return jsonify({
                 "success": True,
-                "audio_url": "/static/audio/speech.mp3",
-                "char_timings": char_timings
+                "audio_url": audio_url,
+                "char_timings": valid_timings
             })
         else:
             print(f"Error from ElevenLabs service: {result.get('error')}")

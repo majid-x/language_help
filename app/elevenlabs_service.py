@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # API Configuration
-ELEVENLABS_API_KEY = "sk_11d1702cf0249669e8291b5608c4a25ce25095bf2c9b40cc"
+ELEVENLABS_API_KEY = "sk_880456d1656eb97e6e28555b39364f494e0402932bbfda40"
 DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Default voice ID
 
 class ElevenLabsService:

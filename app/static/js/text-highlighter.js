@@ -7,28 +7,28 @@ console.log("text-highlighter.js loaded");
 
 class TextHighlighter {
   constructor() {
-    this.passageElement = null;
-    this.charElements = [];
-    this.highlightInterval = null;
-    this.currentIndex = 0;
-    this.charTimings = [];
-    this.pauseHighlighting = false;
+    this.characters = [];
+    this.startTimes = [];
+    this.endTimes = [];
+    this.audioUrl = "";
     this.highlightClassName = "highlighted";
-    this.onComplete = null;
+
+    this.passageElement = null;
+    this.audioElement = null;
+    this.activeTimeouts = [];
     console.log("TextHighlighter constructor called");
   }
 
   /**
    * Initialize the highlighter
    * @param {HTMLElement} element - The passage element to highlight
-   * @param {Array} timings - Array of character timing objects
+   * @param {Array} timingData - Array of character timing objects
    * @param {Function} onComplete - Callback when highlighting completes
    */
-  initialize(element, timings = [], onComplete = null) {
+  initialize(element, timingData = [], onComplete = null) {
     console.log("TextHighlighter.initialize called with:", {
       element: element ? "present" : "missing",
-      timingsLength: timings ? timings.length : 0,
-      timings: timings,
+      timingDataLength: timingData ? timingData.length : 0,
       onComplete: onComplete ? "present" : "missing",
     });
 
@@ -38,8 +38,30 @@ class TextHighlighter {
     }
 
     this.passageElement = element;
-    this.charTimings = timings || [];
     this.onComplete = onComplete;
+
+    // Extract timing data if provided
+    if (timingData && timingData.length > 0) {
+      // Convert the timing data to the format we need
+      this.characters = [];
+      this.startTimes = [];
+      this.endTimes = [];
+
+      timingData.forEach((timing) => {
+        const index = timing.char_index;
+        this.characters[index] = timing.char;
+        this.startTimes[index] = timing.start_time;
+        this.endTimes[index] = timing.end_time;
+      });
+
+      console.log("Timing data processed:", {
+        chars: this.characters.length,
+        startTimes: this.startTimes.length,
+        endTimes: this.endTimes.length,
+      });
+    }
+
+    // Prepare the text for highlighting
     this.prepareText();
   }
 
@@ -55,54 +77,152 @@ class TextHighlighter {
     try {
       const text = this.passageElement.textContent;
       console.log("Preparing text with length:", text.length);
-      let spanContent = "";
 
-      // Create spans for each character, including spaces
-      for (let i = 0; i < text.length; i++) {
-        const char = text[i];
-        // Use a non-breaking space for spaces to ensure they're visible
-        const displayChar = char === " " ? "\u00A0" : char;
-        spanContent += `<span class="char" data-index="${i}">${displayChar}</span>`;
+      // If we don't have timing data, use the text content
+      if (this.characters.length === 0) {
+        this.characters = text.split("");
+        console.log(
+          "Using text content for characters:",
+          this.characters.length
+        );
       }
 
-      this.passageElement.innerHTML = spanContent;
-      this.charElements = this.passageElement.querySelectorAll(".char");
+      // Clear previous content
+      this.passageElement.innerHTML = "";
+
+      // Wrap each character in a span
+      this.characters.forEach((char) => {
+        const span = document.createElement("span");
+        // Use non-breaking space for spaces to ensure they're visible
+        span.textContent = char === " " ? "\u00A0" : char;
+        span.classList.add("char");
+        this.passageElement.appendChild(span);
+      });
+
       console.log(
-        `Prepared ${this.charElements.length} characters for highlighting`
+        `Prepared ${this.characters.length} characters for highlighting`
       );
 
-      // Verify the spans were created correctly
-      console.log(
-        "First few characters:",
-        Array.from(this.charElements)
-          .slice(0, 5)
-          .map((el) => ({
-            text: el.textContent,
-            hasClass: el.classList.contains(this.highlightClassName),
-            computedStyle: window.getComputedStyle(el),
-          }))
-      );
+      // Output sample of the created spans
+      const spans = this.passageElement.querySelectorAll(".char");
+      console.log("Sample spans:", Array.from(spans).slice(0, 5));
     } catch (e) {
       console.error("Error preparing text:", e);
     }
   }
 
+  setAudio(audioUrl) {
+    this.audioUrl = audioUrl;
+    console.log("Audio URL set:", audioUrl);
+  }
+
   /**
    * Start highlighting based on timing data or at a fixed rate
-   * @param {number} fixedRate - Rate for highlighting if no timing data (ms)
    */
-  startHighlighting(fixedRate = 100) {
+  startHighlighting() {
     console.log("Starting text highlighting");
-    this.reset();
-    this.currentIndex = 0;
 
-    if (this.charTimings.length > 0) {
-      // Use actual timing data if available
+    // Stop any existing highlighting
+    this.stopHighlighting();
+
+    // Reset all characters
+    const chars = this.passageElement.querySelectorAll(".char");
+    chars.forEach((char) => char.classList.remove(this.highlightClassName));
+
+    // If we have an audio element, play it
+    if (this.audioElement) {
+      this.audioElement.currentTime = 0;
+      this.audioElement.play().catch((err) => {
+        console.error("Error playing audio:", err);
+      });
+    }
+
+    // Only highlight if we have timing data
+    if (this.startTimes.length > 0) {
+      console.log("Using timing-based highlighting");
       this.startTimingBasedHighlighting();
     } else {
-      // Use fixed rate highlighting
-      this.startFixedRateHighlighting(fixedRate);
+      console.log("Using fixed-rate highlighting");
+      this.startFixedRateHighlighting(100);
     }
+  }
+
+  /**
+   * Start highlighting based on timing data
+   */
+  startTimingBasedHighlighting() {
+    // Debug output timing array lengths
+    console.log("Start timing-based highlighting with arrays:", {
+      characters: this.characters.length,
+      startTimes: this.startTimes.length,
+      endTimes: this.endTimes.length,
+    });
+
+    // Get all characters as spans
+    const chars = this.passageElement.querySelectorAll(".char");
+    console.log("Found character spans:", chars.length);
+
+    // Create an array of all defined start times
+    const definedStartTimes = this.startTimes
+      .map((time, index) => ({ time, index }))
+      .filter((item) => item.time !== undefined);
+
+    console.log("Defined start times:", definedStartTimes.length);
+
+    // Schedule highlighting for each character
+    definedStartTimes.forEach(({ time, index }) => {
+      const startTime = time;
+
+      // Create a timeout to highlight this character
+      const highlightTimeout = setTimeout(() => {
+        if (index < chars.length) {
+          // Add highlighting class
+          chars[index].classList.add(this.highlightClassName);
+          console.log(
+            `Highlighting char ${index} at ${startTime}s: "${chars[index].textContent}"`
+          );
+        }
+      }, startTime * 1000);
+
+      this.activeTimeouts.push(highlightTimeout);
+
+      // Find next character to determine when to unhighlight
+      const nextIndex = definedStartTimes.findIndex(
+        (item) => item.index > index
+      );
+      if (nextIndex !== -1) {
+        const nextStartTime = definedStartTimes[nextIndex].time;
+
+        // Schedule unhighlighting when next character should be highlighted
+        const unhighlightTimeout = setTimeout(() => {
+          if (index < chars.length) {
+            chars[index].classList.remove(this.highlightClassName);
+          }
+        }, nextStartTime * 1000);
+
+        this.activeTimeouts.push(unhighlightTimeout);
+      }
+    });
+
+    // Set final timeout for completion
+    if (this.onComplete && definedStartTimes.length > 0) {
+      // Find the last timing
+      const lastTiming = Math.max(
+        ...definedStartTimes.map((item) => item.time)
+      );
+      const completionTimeout = setTimeout(() => {
+        console.log("Highlighting complete (timed)");
+        this.reset();
+        this.onComplete();
+      }, lastTiming * 1000 + 500); // Add a buffer
+
+      this.activeTimeouts.push(completionTimeout);
+    }
+
+    console.log("DETAILED TIMING DEBUG");
+    console.log("Raw start times:", this.startTimes);
+    console.log("First few start times:", this.startTimes.slice(0, 10));
+    console.log("Type of first start time:", typeof this.startTimes[0]);
   }
 
   /**
@@ -110,100 +230,35 @@ class TextHighlighter {
    * @param {number} rate - Milliseconds per character
    */
   startFixedRateHighlighting(rate) {
-    if (!this.charElements || this.charElements.length === 0) {
-      console.error("No characters to highlight");
-      return;
-    }
+    const chars = this.passageElement.querySelectorAll(".char");
+    let currentIndex = 0;
 
-    console.log(`Starting fixed-rate highlighting (${rate}ms per char)`);
-
-    this.highlightInterval = setInterval(() => {
-      if (this.pauseHighlighting) return;
-
-      if (this.currentIndex < this.charElements.length) {
-        this.charElements[this.currentIndex].classList.add(
-          this.highlightClassName
-        );
-        this.currentIndex++;
-      } else {
-        this.stopHighlighting();
-        if (this.onComplete) this.onComplete();
+    const highlightInterval = setInterval(() => {
+      // Remove highlight from previous character
+      if (currentIndex > 0) {
+        chars[currentIndex - 1].classList.remove(this.highlightClassName);
       }
-    }, rate);
-  }
 
-  /**
-   * Start highlighting based on timing data
-   */
-  startTimingBasedHighlighting() {
-    if (!this.charElements || this.charElements.length === 0) {
-      console.error("No characters to highlight");
-      return;
-    }
+      // Highlight current character
+      if (currentIndex < chars.length) {
+        chars[currentIndex].classList.add(this.highlightClassName);
+        console.log(`Highlighting char ${currentIndex} with fixed rate`);
+        currentIndex++;
+      } else {
+        // Done highlighting
+        clearInterval(highlightInterval);
 
-    if (!this.charTimings || this.charTimings.length === 0) {
-      console.error("No timing data for highlighting");
-      this.startFixedRateHighlighting(100); // Fall back to fixed rate
-      return;
-    }
-
-    console.log("Starting timing-based highlighting with:", {
-      numChars: this.charElements.length,
-      numTimings: this.charTimings.length,
-    });
-
-    // Log the timing data
-    this.charTimings.forEach((timing, index) => {
-      console.log(`Timing ${index}:`, timing);
-    });
-
-    // Create a map of character indices to timing data for faster lookup
-    const timingMap = new Map();
-    this.charTimings.forEach((timing) => {
-      timingMap.set(timing.char_index, timing);
-    });
-
-    const startTime = Date.now();
-    let lastUpdateTime = startTime;
-
-    const scheduleHighlights = () => {
-      const currentTime = Date.now();
-      const elapsed = (currentTime - startTime) / 1000; // Convert to seconds
-      const deltaTime = (currentTime - lastUpdateTime) / 1000; // Convert to seconds
-      lastUpdateTime = currentTime;
-
-      // Find all characters that should be highlighted by now
-      for (let i = 0; i < this.charElements.length; i++) {
-        const timing = timingMap.get(i);
-        if (timing) {
-          if (
-            elapsed >= timing.start_time &&
-            !this.charElements[i].classList.contains(this.highlightClassName)
-          ) {
-            console.log(
-              `Highlighting char ${i}: "${
-                this.charElements[i].textContent
-              }" at time ${elapsed.toFixed(2)}s`
-            );
-            this.charElements[i].classList.add(this.highlightClassName);
-            this.currentIndex = i + 1;
-          }
+        // Call onComplete if provided
+        if (this.onComplete) {
+          console.log("Highlighting complete");
+          this.reset();
+          this.onComplete();
         }
       }
+    }, rate);
 
-      // Check if we're done
-      if (this.currentIndex >= this.charElements.length) {
-        console.log("Highlighting complete");
-        this.stopHighlighting();
-        if (this.onComplete) this.onComplete();
-      } else if (!this.pauseHighlighting) {
-        // Schedule next update with a small delay to prevent excessive CPU usage
-        setTimeout(scheduleHighlights, 10);
-      }
-    };
-
-    // Start the highlighting process
-    scheduleHighlights();
+    // Store interval to clear later if needed
+    this.highlightInterval = highlightInterval;
   }
 
   /**
@@ -211,7 +266,13 @@ class TextHighlighter {
    */
   pause() {
     console.log("Pausing text highlighting");
-    this.pauseHighlighting = true;
+    // Clear all timeouts
+    this.stopHighlighting();
+
+    // Pause audio if it exists
+    if (this.audioElement) {
+      this.audioElement.pause();
+    }
   }
 
   /**
@@ -219,12 +280,7 @@ class TextHighlighter {
    */
   resume() {
     console.log("Resuming text highlighting");
-    this.pauseHighlighting = false;
-
-    // If using timing-based, we need to restart with adjusted time
-    if (this.charTimings.length > 0) {
-      this.startTimingBasedHighlighting();
-    }
+    // Not implemented yet - would need to recalculate timing
   }
 
   /**
@@ -232,8 +288,18 @@ class TextHighlighter {
    */
   stopHighlighting() {
     console.log("Stopping text highlighting");
-    clearInterval(this.highlightInterval);
-    this.highlightInterval = null;
+
+    // Clear all timeouts
+    if (this.activeTimeouts) {
+      this.activeTimeouts.forEach(clearTimeout);
+      this.activeTimeouts = [];
+    }
+
+    // Clear interval if it exists
+    if (this.highlightInterval) {
+      clearInterval(this.highlightInterval);
+      this.highlightInterval = null;
+    }
   }
 
   /**
@@ -241,29 +307,19 @@ class TextHighlighter {
    */
   reset() {
     console.log("Resetting text highlighting");
+
+    // Stop highlighting
     this.stopHighlighting();
-    this.currentIndex = 0;
 
-    // Remove highlight class from all characters
-    if (this.charElements && this.charElements.length > 0) {
-      try {
-        this.charElements.forEach((char) => {
-          if (char && char.classList) {
-            char.classList.remove(this.highlightClassName);
-          }
-        });
-      } catch (e) {
-        console.error("Error resetting highlights:", e);
-      }
+    // Reset audio if it exists
+    if (this.audioElement) {
+      this.audioElement.pause();
+      this.audioElement.currentTime = 0;
     }
-  }
 
-  /**
-   * Get the current highlight progress (0-1)
-   */
-  getProgress() {
-    if (!this.charElements || this.charElements.length === 0) return 0;
-    return this.currentIndex / this.charElements.length;
+    // Remove highlights from all characters
+    const chars = this.passageElement.querySelectorAll(".char");
+    chars.forEach((char) => char.classList.remove(this.highlightClassName));
   }
 }
 
@@ -271,44 +327,99 @@ class TextHighlighter {
 const textHighlighter = new TextHighlighter();
 window.TextHighlighter = textHighlighter;
 
+// Log when the module is loaded
+console.log(
+  "TextHighlighter module loaded and initialized: ",
+  window.TextHighlighter
+);
+
+// Add direct test function
+window.directTestHighlight = function () {
+  console.log("Direct test highlight function called");
+  const passageElement = document.getElementById("passage-text");
+  if (!passageElement) {
+    console.error("Passage element not found");
+    return;
+  }
+
+  // Prepare the passage with spans
+  const text = passageElement.textContent;
+  let spanContent = "";
+  for (let i = 0; i < text.length; i++) {
+    spanContent += `<span class="char">${text[i]}</span>`;
+  }
+  passageElement.innerHTML = spanContent;
+
+  // Highlight each character one by one
+  const chars = passageElement.querySelectorAll(".char");
+  let index = 0;
+
+  function highlightNext() {
+    if (index > 0) {
+      chars[index - 1].classList.remove("highlighted");
+    }
+
+    if (index < chars.length) {
+      chars[index].classList.add("highlighted");
+      index++;
+      setTimeout(highlightNext, 100);
+    }
+  }
+
+  highlightNext();
+};
+
 // Add a test method to verify it's working
 window.testTextHighlighter = function () {
   console.log("Testing TextHighlighter...");
-  console.log("TextHighlighter instance:", textHighlighter);
-  console.log("TextHighlighter methods:", Object.keys(textHighlighter));
-  alert("TextHighlighter is available! Check console for details.");
+
+  // Get the passage element
+  const passageElement = document.getElementById("passage-text");
+  if (!passageElement) {
+    console.error("No passage element found");
+    alert("Error: No passage element found");
+    return;
+  }
+
+  // Create test timing data
+  const testTimings = [];
+  const text = passageElement.textContent;
+  for (let i = 0; i < text.length; i++) {
+    testTimings.push({
+      char: text[i],
+      char_index: i,
+      start_time: i * 0.1,
+      end_time: (i + 1) * 0.1,
+    });
+  }
+
+  console.log("Created test timing data:", testTimings.length);
+
+  // Initialize with test data
+  textHighlighter.initialize(passageElement, testTimings, () => {
+    console.log("Test highlighting complete");
+    alert("Test highlighting complete");
+  });
+
+  // Start highlighting
+  textHighlighter.startHighlighting();
+
+  console.log("Test highlighting started");
+  alert("Test highlighting started");
 };
 
-// Log when the module is loaded
-console.log("TextHighlighter module loaded and initialized");
+// After receiving the data from the server
+if (data.success && data.char_timings && data.char_timings.length > 0) {
+  console.log("Testing first few timings directly from API");
+  const chars = passageText.querySelectorAll(".char");
 
-function testHighlighting(passageElement) {
-  console.log("testHighlighting called with passageElement:", passageElement);
-
-  const testTimings = [
-    { char_index: 0, start_time: 0, end_time: 0.5 },
-    { char_index: 1, start_time: 0.5, end_time: 1 },
-    { char_index: 2, start_time: 1, end_time: 1.5 },
-    { char_index: 3, start_time: 1.5, end_time: 2 },
-    { char_index: 4, start_time: 2, end_time: 2.5 },
-    { char_index: 5, start_time: 2.5, end_time: 3 },
-    { char_index: 6, start_time: 3, end_time: 3.5 },
-    { char_index: 7, start_time: 3.5, end_time: 4 },
-    { char_index: 8, start_time: 4, end_time: 4.5 },
-    { char_index: 9, start_time: 4.5, end_time: 5 },
-    // Add more test timings as needed
-  ];
-
-  console.log("Test timings:", testTimings);
-
-  if (window.TextHighlighter) {
-    window.TextHighlighter.initialize(passageElement, testTimings, () => {
-      console.log("Test highlighting complete");
-    });
-    window.TextHighlighter.startHighlighting();
-  } else {
-    console.error("TextHighlighter is not initialized");
+  // Directly highlight the first 5 characters
+  for (let i = 0; i < 5 && i < data.char_timings.length; i++) {
+    const timing = data.char_timings[i];
+    if (timing && timing.char_index < chars.length) {
+      setTimeout(() => {
+        chars[timing.char_index].classList.add("highlighted");
+      }, i * 500); // Just use a fixed delay for testing
+    }
   }
 }
-
-console.log("Character timings:", data.char_timings);
