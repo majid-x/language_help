@@ -49,6 +49,18 @@ h2 {
   line-height: 1.6;
   position: relative;
   z-index: 0;
+  width: 100%;
+  min-height: 250px;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  resize: vertical;
+  font-family: Arial, sans-serif;
+}
+
+#passage-text:focus {
+  outline: none;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.2) inset;
 }
 
 .controls {
@@ -79,6 +91,64 @@ h2 {
 /* Feedback Section */
 .feedback-section {
   margin-top: 30px;
+  margin-bottom: 15px;
+  padding: 10px;
+  border-radius: 5px;
+  background-color: #f8f8f8;
+  border-left: 3px solid #000;
+}
+
+.feedback-section h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+
+.feedback-section p {
+  margin: 5px 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.overall-feedback {
+  background-color: #f0f0f0;
+  border-left: 3px solid #333;
+  margin-top: 20px;
+  padding: 12px;
+}
+
+.feedback-item h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  text-align: center;
+  font-size: 18px;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 5px;
+}
+
+/* Add accent colors for different feedback types */
+.feedback-section:nth-of-type(1) {
+  border-left-color: #ff6b6b; /* Pronunciation */
+}
+
+.feedback-section:nth-of-type(2) {
+  border-left-color: #48dbfb; /* Fluency */
+}
+
+.feedback-section:nth-of-type(3) {
+  border-left-color: #1dd1a1; /* Grammar */
+}
+
+.feedback-section:nth-of-type(4) {
+  border-left-color: #feca57; /* Vocabulary */
+}
+
+.feedback-section:nth-of-type(5) {
+  border-left-color: #5f27cd; /* Voice Quality */
+}
+
+.feedback-section:nth-of-type(6) {
+  border-left-color: #ff9f43; /* Accent */
 }
 
 .feedback-box {
@@ -166,23 +236,211 @@ h2 {
 .char {
   display: inline-block;
   position: relative;
-  transition: background-color 0.2s ease;
+  transition: all 0.2s ease;
   padding: 0 1px;
   min-width: 4px;
-  border: 1px solid rgba(200, 200, 200, 0.1);
 }
 
 .char.highlighted {
-  background-color: yellow;
+  background-color: #ff9500;
   color: #000;
   border-radius: 2px;
   font-weight: bold;
-  box-shadow: 0 0 3px rgba(255, 255, 0, 0.7);
-  transform: scale(1.1);
-  z-index: 2;
+  border: 1px solid #ff6600;
+  box-shadow: 0 0 5px rgba(255, 150, 0, 0.8);
+  transform: scale(1.3);
+  z-index: 100;
+  position: relative;
 }
 
-/* Add an outline for debugging */
-#direct-test-debug .char {
-  border: 1px solid rgba(0, 0, 255, 0.2);
+/* Error message styles */
+.error-message {
+  background-color: #ffeeee;
+  border-left: 4px solid #ff0000;
+  color: #700000;
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+/* Make debug section more visible when there's an error */
+#debug-section.has-error {
+  border-color: #ff0000;
+  background-color: #fff5f5;
+}
+
+/* Microphone permission warning */
+.mic-permission-warning {
+  background-color: #fffbe5;
+  border: 1px solid #ffd700;
+  color: #886c00;
+  padding: 15px;
+  margin: 15px 0;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.mic-permission-warning:before {
+  content: "⚠️";
+  font-size: 20px;
+  margin-right: 10px;
+}
+
+/* Extra styles for button states */
+.control-btn.disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.control-btn.recording {
+  background-color: #ff0000;
+  color: white;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Add visibility styles to help with transitions */
+.feedback-section .error-details {
+  margin-top: 10px;
+  font-family: monospace;
+  font-size: 12px;
+  background: #f5f5f5;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  white-space: pre-wrap;
+  display: none;
+}
+
+.feedback-section .error-details.visible {
+  display: block;
+}
+
+/* Recording button active state */
+.control-btn.recording-active {
+  background-color: #ff0000;
+  color: white;
+  border-color: #cc0000;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Language Preferences */
+.language-preferences {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 15px;
+  background-color: #fff;
+  border: 2px solid #000;
+  border-radius: 5px;
+  padding: 15px;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(0, 0, 0, 0.05),
+    rgba(0, 0, 0, 0.05) 2px,
+    transparent 2px,
+    transparent 6px
+  );
+}
+
+.language-selection,
+.accent-preference {
+  flex: 1;
+  min-width: 220px;
+}
+
+.language-selection label,
+.accent-preference label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.language-selection select,
+.accent-preference select {
+  width: 100%;
+  padding: 8px;
+  border: 2px solid #000;
+  border-radius: 3px;
+  background-color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .language-preferences {
+    flex-direction: column;
+  }
+
+  .language-selection,
+  .accent-preference {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+}
+
+/* Microphone permission status indicators */
+#permission-status {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  display: inline-block;
+  font-size: 14px;
+}
+
+#permission-status.status-unknown {
+  background-color: #f0f0f0;
+  color: #666;
+}
+
+#permission-status.status-pending {
+  background-color: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeeba;
+}
+
+#permission-status.status-granted {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+#permission-status.status-denied {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+#permission-status.status-error {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  font-weight: bold;
 }

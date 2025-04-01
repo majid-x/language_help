@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # API Configuration
-ELEVENLABS_API_KEY = "sk_880456d1656eb97e6e28555b39364f494e0402932bbfda40"
-DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Default voice ID
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+DEFAULT_VOICE_ID = "VR6AewLTigWG4xSOukaG"  # Default voice ID
 
 class ElevenLabsService:
     """Service for interacting with ElevenLabs Text-to-Speech API"""

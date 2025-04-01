@@ -1,20 +1,36 @@
 console.log("main.js is being executed");
 
+// Global variables
+let passageText;
+let readBtn;
+let restartBtn;
+let practiceBtn;
+let feedbackText;
+let feedbackHistory;
+let playBtn;
+let muteBtn;
+let progressBar;
+let audioElement = null;
+let recordingAudio = null;
+let currentMode = "idle"; // 'idle', 'reading', 'practicing'
+let audioLevelMonitor = null;
+
 // Function to initialize when the page is ready
 function initApp() {
   console.log("Initializing app...");
 
   // DOM Elements
-  const passageText = document.getElementById("passage-text");
-  const readBtn = document.getElementById("read-btn");
-  const restartBtn = document.getElementById("restart-btn");
-  const practiceBtn = document.getElementById("practice-btn");
-  const feedbackText = document.getElementById("feedback-text");
-  const feedbackHistory = document.getElementById("feedback-history");
-  const playBtn = document.querySelector(".play-btn");
-  const muteBtn = document.querySelector(".mute-btn");
-  const progressBar = document.querySelector(".progress");
+  passageText = document.getElementById("passage-text");
+  readBtn = document.getElementById("read-btn");
+  restartBtn = document.getElementById("restart-btn");
+  practiceBtn = document.getElementById("practice-btn");
+  feedbackText = document.getElementById("feedback-text");
+  feedbackHistory = document.getElementById("feedback-history");
+  playBtn = document.querySelector(".play-btn");
+  muteBtn = document.querySelector(".mute-btn");
+  progressBar = document.querySelector(".progress");
   const testHighlighterBtn = document.getElementById("test-highlighter-btn");
+  const testMicBtn = document.getElementById("test-mic-btn");
 
   console.log("DOM elements found:", {
     passageText: !!passageText,
@@ -22,33 +38,32 @@ function initApp() {
     restartBtn: !!restartBtn,
     practiceBtn: !!practiceBtn,
     testHighlighterBtn: !!testHighlighterBtn,
+    testMicBtn: !!testMicBtn,
+    playBtn: !!playBtn,
+    muteBtn: !!muteBtn,
+    progressBar: !!progressBar,
   });
-
-  // Global variables
-  let audioElement = null;
-  let recordingAudio = null;
-  let currentMode = "idle"; // 'idle', 'reading', 'practicing'
-  let audioLevelMonitor = null;
 
   // Try to initialize text highlighter and audio recorder
   try {
     if (window.TextHighlighter) {
       console.log("TextHighlighter found, initializing...");
-      window.TextHighlighter.initialize(
-        passageText,
-        [],
-        onHighlightingComplete
-      );
+      window.TextHighlighter.initialize(passageText, [], function () {
+        console.log("Highlighting complete");
+        currentMode = "idle";
+      });
       console.log("TextHighlighter initialized successfully");
     } else {
       console.error("TextHighlighter is not defined");
     }
 
-    if (typeof AudioRecorder !== "undefined") {
-      AudioRecorder.initialize(onRecordingStart, onRecordingComplete);
+    if (typeof AudioRecorder !== "undefined" && AudioRecorder.initialize) {
+      AudioRecorder.initialize();
       console.log("AudioRecorder initialized");
     } else {
-      console.error("AudioRecorder is not defined");
+      console.error(
+        "AudioRecorder is not defined or missing initialize method"
+      );
     }
   } catch (e) {
     console.error("Error initializing modules:", e);
@@ -73,6 +88,9 @@ function initApp() {
   if (testHighlighterBtn) {
     testHighlighterBtn.addEventListener("click", testTextHighlighter);
   }
+  if (testMicBtn) {
+    testMicBtn.addEventListener("click", handleTestMicClick);
+  }
 
   console.log("Event listeners attached");
 
@@ -88,7 +106,7 @@ function initApp() {
 
     // Create test timing data
     const testTimings = [];
-    const text = passageText.textContent;
+    const text = passageText.value || passageText.textContent;
     for (let i = 0; i < text.length; i++) {
       testTimings.push({
         char: text[i],
@@ -197,15 +215,20 @@ function initApp() {
       TextHighlighter.reset();
     }
 
-    // Get the passage text
-    const text = passageText ? passageText.textContent : "";
+    // Get the passage text from the textarea
+    const text = passageText.value.trim();
     console.log("Text to process:", text);
+
+    // Check if text is empty
+    if (!text) {
+      alert("Please enter some text to read.");
+      currentMode = "idle";
+      return false;
+    }
 
     try {
       // Show we're processing
-      if (passageText) {
-        passageText.style.opacity = "0.5";
-      }
+      passageText.style.opacity = "0.5";
 
       // Generate speech from the server
       const response = await fetch("/generate-speech", {
@@ -226,16 +249,68 @@ function initApp() {
       });
 
       // Restore opacity
-      if (passageText) {
-        passageText.style.opacity = "1";
-      }
+      passageText.style.opacity = "1";
 
       if (data.success) {
         console.log("Speech generated successfully");
 
+        // Process and validate timing data
+        const processedTimings = [];
+        if (data.char_timings && Array.isArray(data.char_timings)) {
+          console.log(
+            `Received ${data.char_timings.length} timing entries from server`
+          );
+
+          // Validate and convert timing data
+          data.char_timings.forEach((timing, index) => {
+            if (timing && typeof timing === "object") {
+              const processedTiming = {
+                char: timing.char || "",
+                char_index:
+                  typeof timing.char_index === "number"
+                    ? timing.char_index
+                    : parseInt(timing.char_index),
+                start_time:
+                  typeof timing.start_time === "number"
+                    ? timing.start_time
+                    : parseFloat(timing.start_time),
+                end_time:
+                  typeof timing.end_time === "number"
+                    ? timing.end_time
+                    : parseFloat(timing.end_time),
+              };
+
+              // Validate processed timing
+              if (
+                !isNaN(processedTiming.char_index) &&
+                !isNaN(processedTiming.start_time)
+              ) {
+                processedTimings.push(processedTiming);
+              } else {
+                console.warn(
+                  `Skipping invalid timing at index ${index}:`,
+                  timing
+                );
+              }
+            }
+          });
+
+          console.log(
+            `Processed ${processedTimings.length} valid timing entries`
+          );
+
+          // Replace original timings with processed ones
+          data.char_timings = processedTimings;
+        } else {
+          console.warn("No timing data received or invalid timing data format");
+          data.char_timings = [];
+        }
+
         // Log full timing data for debugging
-        console.log("Complete timing data:", data.char_timings);
-        console.log("First few timings:", data.char_timings.slice(0, 5));
+        console.log(
+          "First few processed timings:",
+          data.char_timings.slice(0, 5)
+        );
 
         // Create audio element and load the generated speech
         if (audioElement) {
@@ -251,42 +326,59 @@ function initApp() {
 
         // Prepare the passage for highlighting by creating character spans
         if (passageText) {
-          passageText.innerHTML = "";
+          // Store the original text for later
+          const originalText = passageText.value;
+
+          // Replace textarea with spans for highlighting
+          passageText.style.display = "none";
+
+          // Clean up any existing highlight container
+          const existingContainer = document.getElementById(
+            "highlight-container"
+          );
+          if (existingContainer) {
+            existingContainer.remove();
+          }
+
+          const tempContainer = document.createElement("div");
+          tempContainer.id = "highlight-container";
+
+          // Make the container visually distinct
+          tempContainer.style.fontSize = "18px";
+          tempContainer.style.lineHeight = "1.6";
+          tempContainer.style.minHeight = "250px";
+          tempContainer.style.maxHeight = "100%";
+          tempContainer.style.overflow = "auto";
+          tempContainer.style.whiteSpace = "pre-wrap";
+          tempContainer.style.wordBreak = "break-word";
+          tempContainer.style.padding = "12px";
+          tempContainer.style.fontFamily = "Arial, sans-serif";
+          tempContainer.style.backgroundColor = "#ffffff";
+          tempContainer.style.border = "1px dashed #cccccc"; // Add border for visibility
+          tempContainer.style.borderRadius = "5px";
+
+          // Log container creation
+          console.log(
+            "Created highlighting container with ID:",
+            tempContainer.id
+          );
+
+          passageText.parentNode.insertBefore(
+            tempContainer,
+            passageText.nextSibling
+          );
+
           const chars = text.split("");
           chars.forEach((char, i) => {
             const span = document.createElement("span");
             span.textContent = char === " " ? "\u00A0" : char;
             span.classList.add("char");
             span.dataset.index = i;
-            passageText.appendChild(span);
+            tempContainer.appendChild(span);
           });
-          console.log("Prepared spans for highlighting");
+
+          console.log("Prepared spans for highlighting:", chars.length);
         }
-
-        // DIRECT HIGHLIGHTING TEST - highlight the first 5 characters directly
-        // This will verify if the spans can be highlighted properly
-        //if (data.char_timings && data.char_timings.length > 0) {
-        //  console.log("Testing direct highlighting of first few characters");
-        //  const charSpans = passageText.querySelectorAll(".char");
-
-        // Clear any previous highlights
-        //charSpans.forEach((span) => span.classList.remove("highlighted"));
-
-        // Try highlighting the first few characters
-        //for (let i = 0; i < 5 && i < data.char_timings.length; i++) {
-        //const timing = data.char_timings[i];
-        // const index = timing.char_index;
-
-        //if (index < charSpans.length) {
-        //setTimeout(() => {
-        //  console.log(
-        //    `Directly highlighting char ${index}: ${charSpans[index].textContent}`
-        //  );
-        //  charSpans[index].classList.add("highlighted");
-        //}, (i + 1) * 500); // Highlight every 500ms
-        //}
-        //}
-        //}
 
         // Set up audio with timing-based highlighting
         audioElement.addEventListener("loadedmetadata", () => {
@@ -300,7 +392,16 @@ function initApp() {
             console.log("Audio play event fired");
 
             // Set up the timing-based highlighting
-            const charSpans = passageText.querySelectorAll(".char");
+            const highlightContainer = document.getElementById(
+              "highlight-container"
+            );
+            if (!highlightContainer) {
+              console.error("Highlight container not found!");
+              return;
+            }
+
+            const charSpans = highlightContainer.querySelectorAll(".char");
+            console.log("Found character spans:", charSpans.length);
 
             // Clear any previous highlights and timeouts
             if (window.highlightTimeouts) {
@@ -313,23 +414,57 @@ function initApp() {
             charSpans.forEach((span) => span.classList.remove("highlighted"));
 
             // Set up timeouts for each character based on timing data
-            data.char_timings.forEach((timing) => {
-              const index = timing.char_index;
-              const startTime = timing.start_time * 1000; // Convert to ms
+            if (data.char_timings && data.char_timings.length > 0) {
+              console.log(
+                "Setting up highlighting timeouts for",
+                data.char_timings.length,
+                "characters"
+              );
 
-              if (index < charSpans.length) {
-                const timeout = setTimeout(() => {
-                  charSpans[index].classList.add("highlighted");
-                }, startTime);
+              // Log the first few timings for debugging
+              console.log(
+                "First 5 timing entries:",
+                data.char_timings.slice(0, 5)
+              );
 
-                window.highlightTimeouts.push(timeout);
-              }
-            });
+              data.char_timings.forEach((timing, i) => {
+                if (
+                  !timing ||
+                  typeof timing.char_index === "undefined" ||
+                  typeof timing.start_time === "undefined"
+                ) {
+                  console.error("Invalid timing data at index", i, timing);
+                  return;
+                }
+
+                const index = timing.char_index;
+                const startTime = timing.start_time * 1000; // Convert to ms
+
+                if (index < charSpans.length) {
+                  const timeout = setTimeout(() => {
+                    console.log(`Highlighting char ${index} at ${startTime}ms`);
+                    charSpans[index].classList.add("highlighted");
+                  }, startTime);
+
+                  window.highlightTimeouts.push(timeout);
+                }
+              });
+            } else {
+              console.error("No valid timing data available for highlighting");
+            }
+          });
+
+          // When audio ends, restore the textarea
+          audioElement.addEventListener("ended", () => {
+            console.log("Audio playback ended");
+            resetUIAfterPlayback();
+            currentMode = "idle";
           });
 
           // Play the audio
           audioElement.play().catch((error) => {
             console.error("Error playing audio:", error);
+            resetUIAfterPlayback();
           });
         });
 
@@ -337,9 +472,10 @@ function initApp() {
         setTimeout(() => {
           if (audioElement && audioElement.paused) {
             console.log("Fallback: Playing audio after timeout");
-            audioElement
-              .play()
-              .catch((e) => console.error("Error in fallback play:", e));
+            audioElement.play().catch((e) => {
+              console.error("Error in fallback play:", e);
+              resetUIAfterPlayback();
+            });
           }
         }, 1000);
       } else {
@@ -352,12 +488,31 @@ function initApp() {
       alert("An error occurred. Please try again.");
       currentMode = "idle";
       // Restore opacity
-      if (passageText) {
-        passageText.style.opacity = "1";
-      }
+      passageText.style.opacity = "1";
+      resetUIAfterPlayback();
     }
 
     return false;
+  }
+
+  // Function to reset UI after playback
+  function resetUIAfterPlayback() {
+    // Remove temporary highlighting container
+    const highlightContainer = document.getElementById("highlight-container");
+    if (highlightContainer) {
+      highlightContainer.remove();
+    }
+
+    // Show the textarea again
+    if (passageText) {
+      passageText.style.display = "";
+    }
+
+    // Clear any timeouts
+    if (window.highlightTimeouts) {
+      window.highlightTimeouts.forEach((timeout) => clearTimeout(timeout));
+      window.highlightTimeouts = [];
+    }
   }
 
   // Handle "Restart" button click
@@ -365,21 +520,43 @@ function initApp() {
     console.log("Restart button clicked");
     if (e) e.preventDefault();
 
-    // Reset playback
-    resetPlayback();
-
-    // Clear any highlight timeouts
-    if (window.highlightTimeouts) {
-      window.highlightTimeouts.forEach((timeout) => clearTimeout(timeout));
-      window.highlightTimeouts = [];
+    // Stop and clear any audio elements
+    if (audioElement) {
+      console.log("Stopping and clearing generated audio");
+      audioElement.pause();
+      audioElement.src = "";
+      audioElement = null;
     }
 
-    // Remove all highlighting from characters
-    const charSpans = document.querySelectorAll(".char");
-    charSpans.forEach((span) => span.classList.remove("highlighted"));
+    if (recordingAudio) {
+      console.log("Stopping and clearing recorded audio");
+      recordingAudio.pause();
+      recordingAudio.src = "";
+      recordingAudio = null;
+    }
 
-    // Reset TextHighlighter if available (for backward compatibility)
-    if (TextHighlighter && TextHighlighter.reset) {
+    // Reset UI elements
+    resetUIAfterPlayback();
+
+    // Hide recording container
+    const recordingContainer = document.querySelector(".recording-container");
+    if (recordingContainer) {
+      recordingContainer.style.display = "none";
+    }
+
+    // Reset play/mute buttons
+    const playBtn = document.querySelector(".play-btn");
+    if (playBtn) playBtn.textContent = "▶";
+
+    const muteBtn = document.querySelector(".mute-btn");
+    if (muteBtn) muteBtn.textContent = "🔊";
+
+    // Reset progress bar
+    const progressBar = document.querySelector(".progress");
+    if (progressBar) progressBar.style.width = "0%";
+
+    // Reset TextHighlighter if available
+    if (window.TextHighlighter && TextHighlighter.reset) {
       TextHighlighter.reset();
     }
 
@@ -388,7 +565,40 @@ function initApp() {
       AudioRecorder.stopRecording();
     }
 
+    // Reset button appearance
+    if (practiceBtn) {
+      practiceBtn.textContent = "Practice";
+      practiceBtn.classList.remove("recording-active");
+    }
+
+    // Reset textarea opacity
+    if (passageText) {
+      passageText.style.opacity = "1";
+      passageText.style.display = "";
+    }
+
+    // Hide highlighting container if exists
+    const highlightingContainer = document.getElementById(
+      "highlighting-container"
+    );
+    if (highlightingContainer) {
+      highlightingContainer.classList.add("hidden");
+    }
+
+    // Remove highlighting-active class from passage box
+    const passageBox = document.querySelector(".passage-box");
+    if (passageBox) {
+      passageBox.classList.remove("highlighting-active");
+    }
+
+    // Clear any timeouts
+    if (window.highlightTimeouts) {
+      window.highlightTimeouts.forEach(clearTimeout);
+      window.highlightTimeouts = [];
+    }
+
     currentMode = "idle";
+    console.log("Application reset to idle state");
 
     return false;
   }
@@ -398,37 +608,406 @@ function initApp() {
     console.log("Practice button clicked");
     if (e) e.preventDefault();
 
-    if (currentMode !== "idle") return;
-
-    // If already recording, stop recording
-    if (AudioRecorder && AudioRecorder.isActive && AudioRecorder.isActive()) {
-      AudioRecorder.stopRecording();
+    // If we're already recording, this acts as a "stop" button
+    if (currentMode === "practicing") {
+      console.log("Already recording, stopping practice");
+      if (AudioRecorder && AudioRecorder.isActive && AudioRecorder.isActive()) {
+        console.log("Stopping audio recording");
+        AudioRecorder.stopRecording();
+      }
       return false;
     }
 
-    currentMode = "practicing";
-    if (TextHighlighter && TextHighlighter.reset) TextHighlighter.reset();
-
-    // Start recording
-    let success = false;
-
-    if (AudioRecorder && AudioRecorder.startRecording) {
-      success = AudioRecorder.startRecording();
+    if (currentMode !== "idle") {
+      console.log("Not in idle mode, ignoring practice click");
+      return false;
     }
 
-    if (success) {
-      // Start highlighting at the same pace as the model
-      if (TextHighlighter && TextHighlighter.startHighlighting) {
-        TextHighlighter.startHighlighting();
-      }
-    } else {
+    // Get text from textarea
+    const text = passageText.value.trim();
+    if (!text) {
+      alert("Please enter some text to practice with.");
+      return false;
+    }
+
+    console.log("Starting practice with text:", text.slice(0, 30) + "...");
+    currentMode = "practicing";
+
+    // Check if AudioRecorder is available
+    if (!window.AudioRecorder) {
+      console.error("AudioRecorder not available");
       alert(
-        "Failed to start recording. Please ensure microphone permissions are granted."
+        "Audio recording functionality is not available. Please check your browser permissions."
       );
       currentMode = "idle";
+      return false;
+    }
+
+    try {
+      // Update button text to show it's now a stop button
+      if (practiceBtn) {
+        practiceBtn.textContent = "Stop Recording";
+        practiceBtn.classList.add("recording-active");
+      }
+
+      // Provide visual feedback that recording is starting
+      passageText.style.opacity = "0.7";
+
+      // Start recording with a callback for when recording completes
+      console.log("Starting audio recording...");
+      AudioRecorder.startRecording(function (recordingData) {
+        console.log("Recording complete, size:", recordingData.length);
+
+        // Reset button text
+        if (practiceBtn) {
+          practiceBtn.textContent = "Practice";
+          practiceBtn.classList.remove("recording-active");
+        }
+
+        // Reset opacity
+        passageText.style.opacity = "1";
+
+        // Create audio element from the recording data
+        try {
+          console.log("Processing recording data...");
+          const audioBlob = dataURItoBlob(recordingData);
+          console.log("Created audio blob, size:", audioBlob.size);
+
+          if (audioBlob.size === 0) {
+            console.error("Audio blob is empty");
+            alert("Recording failed, please try again");
+            currentMode = "idle";
+            return;
+          }
+
+          const audioUrl = URL.createObjectURL(audioBlob);
+          console.log("Created audio URL:", audioUrl);
+
+          // Release any previous recording
+          if (recordingAudio) {
+            recordingAudio.pause();
+            recordingAudio.src = "";
+            recordingAudio = null;
+          }
+
+          recordingAudio = new Audio(audioUrl);
+          recordingAudio.onloadedmetadata = function () {
+            console.log("Recording loaded, duration:", recordingAudio.duration);
+          };
+          recordingAudio.onerror = function () {
+            console.error("Error loading recording:", recordingAudio.error);
+          };
+          console.log("Created recording audio element");
+
+          // Set up playback controls for the recording
+          setupRecordingPlayback();
+        } catch (error) {
+          console.error("Error creating audio from recording:", error);
+          alert("Error processing recording: " + error.message);
+          currentMode = "idle";
+          return;
+        }
+
+        // Send the recording for analysis
+        console.log("Sending recording for analysis...");
+
+        // Get language preferences and accent goal
+        const nativeLanguage = document.getElementById("native-language")
+          ? document.getElementById("native-language").value
+          : "english";
+        const targetLanguage = document.getElementById("target-language")
+          ? document.getElementById("target-language").value
+          : "english";
+        const accentGoal = document.getElementById("accent-goal")
+          ? document.getElementById("accent-goal").value
+          : "identify";
+
+        console.log(
+          `Language preferences - Native: ${nativeLanguage}, Target: ${targetLanguage}, Accent Goal: ${accentGoal}`
+        );
+
+        fetch("/analyze-speech", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            audio: recordingData,
+            passage: text,
+            native_language: nativeLanguage,
+            target_language: targetLanguage,
+            accent_goal: accentGoal,
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            console.log("Analysis response received:", data.success);
+
+            if (data.success) {
+              // Display feedback
+              const feedbackText = document.getElementById("feedback-text");
+              if (feedbackText) {
+                feedbackText.textContent = data.feedback.pronunciation
+                  ? data.feedback.pronunciation.details
+                  : data.feedback;
+              }
+
+              // Add to feedback history if available
+              try {
+                if (data.feedback && typeof data.feedback === "object") {
+                  // Create a feedback item
+                  const feedbackItem = document.createElement("div");
+                  feedbackItem.className = "feedback-item";
+
+                  let content = "<h3>Practice Results</h3>";
+
+                  // Check if we have detailed structured feedback
+                  if (data.feedback.pronunciation && data.feedback.fluency) {
+                    // Enhanced feedback display
+                    content += `
+                      <div class="feedback-section">
+                        <h4>Pronunciation: ${
+                          data.feedback.pronunciation.score
+                        }/10</h4>
+                        <p><strong>Details:</strong> ${
+                          data.feedback.pronunciation.details ||
+                          "No details provided."
+                        }</p>
+                        ${
+                          data.feedback.pronunciation.tips
+                            ? `<p><strong>Tips:</strong> ${data.feedback.pronunciation.tips}</p>`
+                            : ""
+                        }
+                      </div>
+
+                      <div class="feedback-section">
+                        <h4>Fluency: ${data.feedback.fluency.score}/10</h4>
+                        <p><strong>Details:</strong> ${
+                          data.feedback.fluency.details ||
+                          "No details provided."
+                        }</p>
+                        ${
+                          data.feedback.fluency.tips
+                            ? `<p><strong>Tips:</strong> ${data.feedback.fluency.tips}</p>`
+                            : ""
+                        }
+                      </div>
+
+                      ${
+                        data.feedback.grammar
+                          ? `
+                      <div class="feedback-section">
+                        <h4>Grammar: ${data.feedback.grammar.score}/10</h4>
+                        <p><strong>Details:</strong> ${
+                          data.feedback.grammar.details ||
+                          "No details provided."
+                        }</p>
+                        ${
+                          data.feedback.grammar.tips
+                            ? `<p><strong>Tips:</strong> ${data.feedback.grammar.tips}</p>`
+                            : ""
+                        }
+                      </div>`
+                          : ""
+                      }
+
+                      ${
+                        data.feedback.vocabulary
+                          ? `
+                      <div class="feedback-section">
+                        <h4>Vocabulary: ${
+                          data.feedback.vocabulary.score
+                        }/10</h4>
+                        <p><strong>Details:</strong> ${
+                          data.feedback.vocabulary.details ||
+                          "No details provided."
+                        }</p>
+                        ${
+                          data.feedback.vocabulary.tips
+                            ? `<p><strong>Tips:</strong> ${data.feedback.vocabulary.tips}</p>`
+                            : ""
+                        }
+                      </div>`
+                          : ""
+                      }
+
+                      ${
+                        data.feedback.voice_quality
+                          ? `
+                      <div class="feedback-section">
+                        <h4>Voice Quality: ${
+                          data.feedback.voice_quality.score
+                        }/10</h4>
+                        <p><strong>Details:</strong> ${
+                          data.feedback.voice_quality.details ||
+                          "No details provided."
+                        }</p>
+                        ${
+                          data.feedback.voice_quality.tips
+                            ? `<p><strong>Tips:</strong> ${data.feedback.voice_quality.tips}</p>`
+                            : ""
+                        }
+                      </div>`
+                          : ""
+                      }
+
+                      ${
+                        data.feedback.accent
+                          ? `
+                      <div class="feedback-section">
+                        <h4>Accent</h4>
+                        <p><strong>Identification:</strong> ${
+                          data.feedback.accent.identification ||
+                          "Not identified"
+                        }</p>
+                        <p><strong>Intensity:</strong> ${
+                          data.feedback.accent.intensity || "Not specified"
+                        }</p>
+                      </div>`
+                          : ""
+                      }
+
+                      ${
+                        data.feedback.overall
+                          ? `
+                      <div class="feedback-section overall-feedback">
+                        <h4>Overall: ${data.feedback.overall.score}/10</h4>
+                        <p>${
+                          data.feedback.overall.summary ||
+                          "No summary provided."
+                        }</p>
+                      </div>`
+                          : ""
+                      }
+                    `;
+                  } else if (data.feedback.pronunciation) {
+                    // Legacy format for backward compatibility
+                    content += `
+                      <p><strong>Pronunciation:</strong> ${
+                        data.feedback.pronunciation.score || "N/A"
+                      }/10 - ${
+                      data.feedback.pronunciation.details || "No details"
+                    }</p>
+                      <p><strong>Rhythm:</strong> ${
+                        data.feedback.rhythm
+                          ? data.feedback.rhythm.score || "N/A"
+                          : "N/A"
+                      }/10</p>
+                      <p><strong>Clarity:</strong> ${
+                        data.feedback.clarity
+                          ? data.feedback.clarity.score || "N/A"
+                          : "N/A"
+                      }/10</p>
+                    `;
+                  } else {
+                    // Simple feedback
+                    content += `<p>${JSON.stringify(data.feedback)}</p>`;
+                  }
+
+                  feedbackItem.innerHTML = content;
+
+                  // Add to history
+                  const feedbackHistory =
+                    document.getElementById("feedback-history");
+                  if (feedbackHistory) {
+                    if (feedbackHistory.firstChild) {
+                      feedbackHistory.insertBefore(
+                        feedbackItem,
+                        feedbackHistory.firstChild
+                      );
+                    } else {
+                      feedbackHistory.appendChild(feedbackItem);
+                    }
+                  }
+
+                  // Also update the main feedback display
+                  const feedbackText = document.getElementById("feedback-text");
+                  if (feedbackText) {
+                    if (
+                      data.feedback.overall &&
+                      data.feedback.overall.summary
+                    ) {
+                      feedbackText.innerHTML = `<p><strong>Overall Score: ${data.feedback.overall.score}/10</strong></p>
+                                              <p>${data.feedback.overall.summary}</p>`;
+                    } else if (data.feedback.pronunciation) {
+                      feedbackText.textContent =
+                        data.feedback.pronunciation.details ||
+                        "Analysis complete. See detailed results below.";
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error("Error creating feedback history item:", e);
+              }
+            } else {
+              console.error("Error analyzing speech:", data.error);
+              alert("Error analyzing your speech: " + data.error);
+            }
+
+            currentMode = "idle";
+          })
+          .catch((error) => {
+            console.error("Error in analyze-speech request:", error);
+            alert("An error occurred during analysis. Please try again.");
+            currentMode = "idle";
+            passageText.style.opacity = "1";
+          });
+      });
+
+      console.log("Recording started successfully");
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      alert("Could not start recording: " + error.message);
+      currentMode = "idle";
+      passageText.style.opacity = "1";
+
+      // Reset button if error
+      if (practiceBtn) {
+        practiceBtn.textContent = "Practice";
+        practiceBtn.classList.remove("recording-active");
+      }
     }
 
     return false;
+  }
+
+  // Helper function to convert data URI to Blob
+  function dataURItoBlob(dataURI) {
+    console.log(
+      "Converting data URI to blob, format:",
+      dataURI.substring(0, 30) + "..."
+    );
+
+    try {
+      // Check if it's already in data URI format
+      if (dataURI.indexOf("data:") === 0) {
+        const byteString = atob(dataURI.split(",")[1]);
+        const mimeString = dataURI.split(",")[0].split(":")[1].split(";")[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+
+        return new Blob([ab], { type: mimeString });
+      } else {
+        // Handle base64 without data URI prefix
+        const byteString = atob(dataURI);
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+
+        // Assume audio/wav if no MIME type provided
+        return new Blob([ab], { type: "audio/wav" });
+      }
+    } catch (error) {
+      console.error("Error converting data URI to blob:", error);
+      return new Blob([], { type: "audio/wav" });
+    }
   }
 
   // Analyze user's speech recording
@@ -446,6 +1025,21 @@ function initApp() {
       reader.onload = async function () {
         const base64Audio = reader.result;
 
+        // Get language preferences
+        const nativeLanguage = document.getElementById("native-language")
+          ? document.getElementById("native-language").value
+          : "english";
+        const targetLanguage = document.getElementById("target-language")
+          ? document.getElementById("target-language").value
+          : "english";
+        const accentGoal = document.getElementById("accent-goal")
+          ? document.getElementById("accent-goal").value
+          : "identify";
+
+        console.log(
+          `Analyzing with preferences - Native: ${nativeLanguage}, Target: ${targetLanguage}, Accent Goal: ${accentGoal}`
+        );
+
         // Send audio to server for analysis
         const response = await fetch("/analyze-speech", {
           method: "POST",
@@ -455,6 +1049,9 @@ function initApp() {
           body: JSON.stringify({
             audio: base64Audio,
             passage: passageText ? passageText.textContent : "",
+            native_language: nativeLanguage,
+            target_language: targetLanguage,
+            accent_goal: accentGoal,
           }),
         });
 
@@ -508,28 +1105,55 @@ function initApp() {
 
   // Set up playback controls for the recording
   function setupRecordingPlayback() {
-    if (!recordingAudio) return;
+    if (!recordingAudio) {
+      console.error("No recording audio to set up playback for");
+      return;
+    }
 
-    console.log("Setting up recording playback");
+    console.log("Setting up recording playback controls");
 
-    // Set up playback controls
+    // Make sure recording container is visible
+    const recordingContainer = document.querySelector(".recording-container");
+    if (recordingContainer) {
+      recordingContainer.style.display = "block";
+    }
+
+    // Get playback controls
+    const playBtn = document.querySelector(".play-btn");
+    const progressBar = document.querySelector(".progress");
+    const muteBtn = document.querySelector(".mute-btn");
+
+    // Reset play button to initial state
     if (playBtn) {
-      playBtn.addEventListener("click", () => {
+      playBtn.textContent = "▶";
+
+      // Set up play/pause functionality
+      playBtn.onclick = function () {
+        console.log("Play button clicked for recording");
         if (recordingAudio.paused) {
-          recordingAudio.play();
+          recordingAudio
+            .play()
+            .then(() => {
+              console.log("Recording playback started");
+            })
+            .catch((err) => {
+              console.error("Error playing recording:", err);
+            });
           playBtn.textContent = "⏸";
         } else {
           recordingAudio.pause();
           playBtn.textContent = "▶";
         }
-      });
+      };
     }
 
     // Update progress bar during playback
     recordingAudio.addEventListener("timeupdate", () => {
-      const progress =
-        (recordingAudio.currentTime / recordingAudio.duration) * 100;
-      if (progressBar) progressBar.style.width = `${progress}%`;
+      if (progressBar && recordingAudio.duration) {
+        const progress =
+          (recordingAudio.currentTime / recordingAudio.duration) * 100;
+        progressBar.style.width = `${progress}%`;
+      }
     });
 
     // Reset play button when audio ends
@@ -540,11 +1164,14 @@ function initApp() {
 
     // Handle mute button
     if (muteBtn) {
-      muteBtn.addEventListener("click", () => {
+      muteBtn.onclick = function () {
+        console.log("Mute button clicked for recording");
         recordingAudio.muted = !recordingAudio.muted;
         muteBtn.textContent = recordingAudio.muted ? "🔇" : "🔊";
-      });
+      };
     }
+
+    console.log("Recording playback controls set up successfully");
   }
 
   // Reset audio playback
@@ -565,21 +1192,39 @@ function initApp() {
     if (e) e.preventDefault();
 
     if (recordingAudio) {
+      console.log("Toggling recording audio playback");
       if (recordingAudio.paused) {
-        recordingAudio.play();
+        recordingAudio
+          .play()
+          .then(() => {
+            console.log("Recording playback started");
+          })
+          .catch((err) => {
+            console.error("Error playing recording:", err);
+          });
         if (playBtn) playBtn.textContent = "⏸";
       } else {
         recordingAudio.pause();
         if (playBtn) playBtn.textContent = "▶";
       }
     } else if (audioElement) {
+      console.log("Toggling generated audio playback");
       if (audioElement.paused) {
-        audioElement.play();
+        audioElement
+          .play()
+          .then(() => {
+            console.log("Generated audio playback started");
+          })
+          .catch((err) => {
+            console.error("Error playing generated audio:", err);
+          });
         if (playBtn) playBtn.textContent = "⏸";
       } else {
         audioElement.pause();
         if (playBtn) playBtn.textContent = "▶";
       }
+    } else {
+      console.log("No audio available to play");
     }
 
     return false;
@@ -596,6 +1241,134 @@ function initApp() {
     } else if (audioElement) {
       audioElement.muted = !audioElement.muted;
       if (muteBtn) muteBtn.textContent = audioElement.muted ? "🔇" : "🔊";
+    }
+
+    return false;
+  }
+
+  // Handle "Test Microphone" button click
+  function handleTestMicClick(e) {
+    console.log("Test Microphone button clicked");
+    if (e) e.preventDefault();
+
+    if (!window.AudioRecorder) {
+      console.error("AudioRecorder not available");
+      alert(
+        "Audio recording functionality is not available. Please check your browser permissions."
+      );
+      return false;
+    }
+
+    try {
+      // Check if mic is already active or being tested
+      if (AudioRecorder.isActive && AudioRecorder.isActive()) {
+        alert("Microphone is currently active and working!");
+        return false;
+      }
+
+      // Update status display
+      const permissionStatus = document.getElementById("permission-status");
+      if (permissionStatus) {
+        permissionStatus.textContent = "Testing microphone...";
+        permissionStatus.className = "status-pending";
+      }
+
+      // Test microphone by requesting access
+      AudioRecorder.initialize(function (success) {
+        if (success) {
+          console.log("Microphone access granted");
+          if (permissionStatus) {
+            permissionStatus.textContent =
+              "Microphone access granted and working!";
+            permissionStatus.className = "status-granted";
+          }
+
+          // Briefly show audio level to confirm it's working
+          let testDuration = 5; // seconds
+          let levelMonitor = null;
+
+          // Show a temporary level indicator
+          const levelIndicator = document.createElement("div");
+          levelIndicator.className = "mic-test-indicator";
+          levelIndicator.style.position = "fixed";
+          levelIndicator.style.bottom = "20px";
+          levelIndicator.style.right = "20px";
+          levelIndicator.style.width = "200px";
+          levelIndicator.style.height = "30px";
+          levelIndicator.style.backgroundColor = "#f0f0f0";
+          levelIndicator.style.border = "1px solid #000";
+          levelIndicator.style.borderRadius = "5px";
+          levelIndicator.style.overflow = "hidden";
+          levelIndicator.style.zIndex = "9999";
+
+          const levelBar = document.createElement("div");
+          levelBar.style.height = "100%";
+          levelBar.style.width = "0%";
+          levelBar.style.backgroundColor = "#4CAF50";
+          levelBar.style.transition = "width 0.1s ease";
+
+          const levelText = document.createElement("div");
+          levelText.style.position = "absolute";
+          levelText.style.top = "50%";
+          levelText.style.left = "50%";
+          levelText.style.transform = "translate(-50%, -50%)";
+          levelText.style.color = "#000";
+          levelText.style.fontWeight = "bold";
+          levelText.textContent = `Testing: ${testDuration}s`;
+
+          levelIndicator.appendChild(levelBar);
+          levelIndicator.appendChild(levelText);
+          document.body.appendChild(levelIndicator);
+
+          // Start monitoring audio level
+          levelMonitor = AudioRecorder.getAudioLevel((level) => {
+            // Use the level (0-255) to update the visualization
+            const scaledLevel = (level / 255) * 100;
+            levelBar.style.width = `${scaledLevel}%`;
+          });
+
+          // Update countdown and clean up
+          const countdownInterval = setInterval(() => {
+            testDuration--;
+            levelText.textContent = `Testing: ${testDuration}s`;
+
+            if (testDuration <= 0) {
+              clearInterval(countdownInterval);
+
+              // Clean up
+              if (levelMonitor) {
+                levelMonitor();
+              }
+
+              document.body.removeChild(levelIndicator);
+
+              if (permissionStatus) {
+                permissionStatus.textContent =
+                  "Microphone test complete - Ready to use!";
+              }
+            }
+          }, 1000);
+        } else {
+          console.error("Microphone access denied");
+          if (permissionStatus) {
+            permissionStatus.textContent =
+              "Microphone access denied! Please check your browser settings.";
+            permissionStatus.className = "status-denied";
+          }
+          alert(
+            "Microphone access was denied. Please check your browser settings and permissions."
+          );
+        }
+      });
+    } catch (error) {
+      console.error("Error testing microphone:", error);
+      alert("Error testing microphone: " + error.message);
+
+      if (permissionStatus) {
+        permissionStatus.textContent =
+          "Error testing microphone: " + error.message;
+        permissionStatus.className = "status-error";
+      }
     }
 
     return false;

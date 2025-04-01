@@ -1,20 +1,21 @@
 """
 OpenAI Service Module
 Handles integration with OpenAI APIs, specifically for analyzing speech recordings
-using GPT-4o-Audio-Preview.
+using GPT-4o-audio-preview models.
 """
 
 import os
 import json
-import openai
+import base64
+import re
 from dotenv import load_dotenv
+from openai import OpenAI
 
 # Load environment variables
 load_dotenv()
 
 # API Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
 
 class OpenAIService:
     """Service for interacting with OpenAI APIs"""
@@ -25,16 +26,20 @@ class OpenAIService:
         if not self.api_key:
             raise ValueError("OpenAI API key is required")
         
-        # Set the API key
-        openai.api_key = self.api_key
+        # Initialize the OpenAI client
+        self.client = OpenAI(api_key=self.api_key)
+        print(f"OpenAI service initialized with API key: {self.api_key[:4]}...{self.api_key[-4:] if len(self.api_key) > 8 else '****'}")
 
-    def analyze_speech(self, audio_file_path, text_passage, prompt=None):
+    def analyze_speech(self, audio_file_path, text_passage, native_language=None, target_language=None, accent_goal=None, prompt=None):
         """
         Analyze speech recording against the text passage
         
         Args:
             audio_file_path (str): Path to the audio file to analyze
             text_passage (str): The original text passage that was read
+            native_language (str, optional): User's native language. Defaults to None.
+            target_language (str, optional): Language user is practicing. Defaults to None.
+            accent_goal (str, optional): User's accent goal. Defaults to None.
             prompt (str, optional): Custom prompt for the analysis. Defaults to None.
             
         Returns:
@@ -45,88 +50,282 @@ class OpenAIService:
             if not os.path.exists(audio_file_path):
                 raise FileNotFoundError(f"Audio file not found: {audio_file_path}")
             
-            # Default prompt for speech analysis
-            if prompt is None:
-                prompt = f"""
-                Analyze this speech recording against the following text passage:
-                
-                TEXT PASSAGE: "{text_passage}"
-                
-                Please evaluate the following aspects of the speech:
-                1. Pronunciation: Are words pronounced correctly? Any specific words that need improvement?
-                2. Rhythm/Pacing: Is the speech paced appropriately? Too fast, too slow, or uneven?
-                3. Clarity: Is the speech clearly articulated and understandable?
-                
-                Provide numerical scores (1-10) for each aspect and specific feedback for improvement.
-                Format your response as a JSON object with the following structure:
-                {{
-                    "pronunciation": {{
-                        "score": [1-10],
-                        "details": "specific feedback"
-                    }},
-                    "rhythm": {{
-                        "score": [1-10],
-                        "details": "specific feedback"
-                    }},
-                    "clarity": {{
-                        "score": [1-10],
-                        "details": "specific feedback"
-                    }}
-                }}
-                """
+            # Enhanced system prompt based on the provided detailed speech analysis parameters
+            system_prompt = """You are a Speech Therapist and will be given an audio recording to analyze and give your feedback. 
+To ensure a proper analysis you will analyze the following aspects:
+
+1. Pronunciation: 
+   - Accuracy of individual sounds (phonemes)
+   - Common mispronunciations
+   - Clarity of articulation
+   - Word stress and syllable emphasis
+   - Effective intonation
+
+2. Fluency and Coherence:
+   - Pace (speed of speaking)
+   - Pauses (frequency, duration, and placement)
+   - Use of filler words
+   - Organization of ideas
+
+3. Lexical Resource:
+   - Range and accuracy of vocabulary
+   - Appropriate use of words and idiomatic expressions
+
+4. Grammatical Range and Accuracy:
+   - Accuracy of grammar
+   - Use of simple and complex grammatical structures
+
+5. Voice Quality:
+   - Pitch and tone consistency
+   - Loudness and projection
+   - Clarity and resonance
+
+Provide detailed, constructive feedback that is helpful, specific, and encouraging."""
             
-            # For demo purposes, return mock feedback instead of actual API calls
-            return {
-                "success": True,
-                "feedback": {
-                    "pronunciation": {
-                        "score": 8,
-                        "details": "Your pronunciation of the word 'practice' is off, and you need to work on the 'th' sound in 'thirty-three'."
-                    },
-                    "rhythm": {
-                        "score": 7,
-                        "details": "Your pacing was slightly rushed in the middle section."
-                    },
-                    "clarity": {
-                        "score": 9,
-                        "details": "Overall very clear enunciation with good volume."
-                    }
+            # User prompt with context - enhanced with more specific reading task
+            if prompt is None:
+                # Format language context information
+                language_context = ""
+                if native_language and target_language:
+                    language_context = f"The speaker's native language is {native_language} and they are practicing {target_language}. "
+                elif native_language:
+                    language_context = f"The speaker's native language is {native_language}. "
+                elif target_language:
+                    language_context = f"The speaker is practicing {target_language}. "
+                
+                # Format accent goal information
+                accent_context = ""
+                if accent_goal:
+                    if accent_goal == "identify":
+                        accent_context = "Please identify their current accent. "
+                    elif accent_goal == "minimize":
+                        accent_context = "They want to minimize their accent. "
+                    else:
+                        accent_context = f"They are aiming for a {accent_goal} accent. "
+                
+                user_prompt = f"""
+                {language_context}{accent_context}Here's the text the user was reading:
+                
+                "{text_passage}"
+                
+                Please analyze their speech and provide detailed feedback on:
+                
+                1. Pronunciation (accuracy of sounds, articulation, word stress): Score out of 10 and specific details
+                2. Fluency and Coherence (pace, pauses, organization): Score out of 10 and specific details
+                3. Grammar and Vocabulary (if applicable): Score out of 10 and specific details
+                4. Voice Quality (pitch, tone, clarity): Score out of 10 and specific details
+                
+                For each category:
+                - Provide a brief summary of strengths and areas for improvement
+                - Include 2-3 specific examples from the recording
+                - Suggest practical tips or exercises to improve
+                
+                Also identify any accent patterns and provide an overall score with a summary of strengths and suggestions.
+                Keep your feedback helpful, specific, and encouraging.
+                """
+            else:
+                user_prompt = prompt
+            
+            print(f"Analyzing speech recording at: {audio_file_path}")
+            print(f"Text passage length: {len(text_passage)} characters")
+            if native_language or target_language or accent_goal:
+                print(f"Language context: Native={native_language}, Target={target_language}, Accent Goal={accent_goal}")
+            
+            # Read the audio file
+            with open(audio_file_path, "rb") as audio_file:
+                audio_data = audio_file.read()
+            
+            try:
+                print("Creating API request to OpenAI using SDK")
+                
+                # Base64 encode the audio file
+                audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+                
+                # Make the API call using the client library
+                response = self.client.chat.completions.create(
+                    model="gpt-4o-audio-preview",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": [
+                            {"type": "text", "text": user_prompt},
+                            {"type": "input_audio", "audio_url": f"data:audio/wav;base64,{audio_base64}"}
+                        ]}
+                    ],
+                    temperature=0.7,
+                    max_tokens=1500
+                )
+                
+                print("Successfully received feedback")
+                
+                # Extract the text content from the response
+                feedback_text = response.choices[0].message.content
+                
+                # Parse the response into structured feedback
+                feedback = self.parse_detailed_feedback(feedback_text)
+                
+                return {
+                    "success": True,
+                    "feedback": feedback
                 }
-            }
+            except Exception as e:
+                print(f"API call failed: {e}")
+                print(f"Error type: {type(e).__name__}")
+                import traceback
+                print(f"Traceback: {traceback.format_exc()}")
+                raise e
+            
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            raise e
+    
+    def parse_detailed_feedback(self, feedback_text):
+        """Parse the detailed feedback text into a structured format"""
         
-        except FileNotFoundError as e:
-            print(f"File error: {e}")
+        # Initialize empty feedback structure
+        parsed_feedback = {
+            "pronunciation": {"score": None, "details": "", "tips": ""},
+            "fluency": {"score": None, "details": "", "tips": ""},
+            "grammar": {"score": None, "details": "", "tips": ""},
+            "vocabulary": {"score": None, "details": "", "tips": ""},
+            "voice_quality": {"score": None, "details": "", "tips": ""},
+            "accent": {"identification": "", "intensity": ""},
+            "overall": {"score": None, "summary": ""}
+        }
+        
+        try:
+            # Extract pronunciation score
+            pronunciation_match = feedback_text.find("Pronunciation") 
+            if pronunciation_match != -1:
+                # Look for score
+                pron_section = feedback_text[pronunciation_match:feedback_text.find("\n\n", pronunciation_match) if feedback_text.find("\n\n", pronunciation_match) != -1 else len(feedback_text)]
+                pron_score_match = re.search(r'(\d+)(?:/10)', pron_section)
+                if pron_score_match:
+                    parsed_feedback["pronunciation"]["score"] = int(pron_score_match.group(1))
+                
+                # Extract details and tips
+                parsed_feedback["pronunciation"]["details"] = self._extract_content(pron_section, ["details", "examples", "issues"])
+                parsed_feedback["pronunciation"]["tips"] = self._extract_content(pron_section, ["tips", "exercises", "improve", "practice"])
+            
+            # Extract fluency score
+            fluency_match = feedback_text.find("Fluency") 
+            if fluency_match != -1:
+                fluency_section = feedback_text[fluency_match:feedback_text.find("\n\n", fluency_match) if feedback_text.find("\n\n", fluency_match) != -1 else len(feedback_text)]
+                fluency_score_match = re.search(r'(\d+)(?:/10)', fluency_section)
+                if fluency_score_match:
+                    parsed_feedback["fluency"]["score"] = int(fluency_score_match.group(1))
+                
+                parsed_feedback["fluency"]["details"] = self._extract_content(fluency_section, ["details", "examples", "issues"])
+                parsed_feedback["fluency"]["tips"] = self._extract_content(fluency_section, ["tips", "exercises", "improve", "practice"])
+            
+            # Extract grammar score
+            grammar_match = feedback_text.find("Grammar") 
+            if grammar_match != -1:
+                grammar_section = feedback_text[grammar_match:feedback_text.find("\n\n", grammar_match) if feedback_text.find("\n\n", grammar_match) != -1 else len(feedback_text)]
+                grammar_score_match = re.search(r'(\d+)(?:/10)', grammar_section)
+                if grammar_score_match:
+                    parsed_feedback["grammar"]["score"] = int(grammar_score_match.group(1))
+                
+                parsed_feedback["grammar"]["details"] = self._extract_content(grammar_section, ["details", "examples", "issues"])
+                parsed_feedback["grammar"]["tips"] = self._extract_content(grammar_section, ["tips", "exercises", "improve", "practice"])
+            
+            # Extract voice quality score
+            voice_match = feedback_text.find("Voice Quality") 
+            if voice_match != -1:
+                voice_section = feedback_text[voice_match:feedback_text.find("\n\n", voice_match) if feedback_text.find("\n\n", voice_match) != -1 else len(feedback_text)]
+                voice_score_match = re.search(r'(\d+)(?:/10)', voice_section)
+                if voice_score_match:
+                    parsed_feedback["voice_quality"]["score"] = int(voice_score_match.group(1))
+                
+                parsed_feedback["voice_quality"]["details"] = self._extract_content(voice_section, ["details", "examples", "issues"])
+                parsed_feedback["voice_quality"]["tips"] = self._extract_content(voice_section, ["tips", "exercises", "improve", "practice"])
+            
+            # Extract accent information
+            accent_match = feedback_text.find("Accent") 
+            if accent_match != -1:
+                accent_section = feedback_text[accent_match:feedback_text.find("\n\n", accent_match) if feedback_text.find("\n\n", accent_match) != -1 else len(feedback_text)]
+                
+                # Try to find accent identification
+                identification_patterns = [
+                    r'(?:sounds like|appears to be|identified as|similar to|characteristic of)\s+([A-Za-z\s]+)(?:accent|speaker)',
+                    r'accent[:\s]+([A-Za-z\s]+)',
+                    r'([A-Za-z\s]+)(?:\s+accent)'
+                ]
+                
+                for pattern in identification_patterns:
+                    accent_id_match = re.search(pattern, accent_section, re.IGNORECASE)
+                    if accent_id_match:
+                        parsed_feedback["accent"]["identification"] = accent_id_match.group(1).strip()
+                        break
+                
+                # Try to find accent intensity
+                intensity_patterns = [
+                    r'(strong|moderate|light|minor|thick|heavy|slight|noticeable)',
+                    r'accent is (strong|moderate|light|minor|thick|heavy|slight|noticeable)'
+                ]
+                
+                for pattern in intensity_patterns:
+                    intensity_match = re.search(pattern, accent_section, re.IGNORECASE)
+                    if intensity_match:
+                        parsed_feedback["accent"]["intensity"] = intensity_match.group(1).strip().capitalize()
+                        break
+            
+            # Extract overall score and summary
+            overall_match = feedback_text.find("Overall") 
+            if overall_match != -1:
+                overall_section = feedback_text[overall_match:feedback_text.find("\n\n", overall_match) if feedback_text.find("\n\n", overall_match) != -1 else len(feedback_text)]
+                overall_score_match = re.search(r'(\d+)(?:/10)', overall_section)
+                if overall_score_match:
+                    parsed_feedback["overall"]["score"] = int(overall_score_match.group(1))
+                
+                # Get summary from overall section
+                summary_match = re.search(r'summary[:\s]+(.+)', overall_section, re.IGNORECASE)
+                if summary_match:
+                    parsed_feedback["overall"]["summary"] = summary_match.group(1).strip()
+                else:
+                    # If no explicit overall summary, take a portion of the overall section
+                    if len(overall_section) > 30:
+                        parsed_feedback["overall"]["summary"] = overall_section[10:100].strip()
+            
+            # Calculate overall score if not found
+            if parsed_feedback["overall"]["score"] is None:
+                component_scores = [
+                    score for score in [
+                        parsed_feedback["pronunciation"]["score"],
+                        parsed_feedback["fluency"]["score"],
+                        parsed_feedback["grammar"]["score"],
+                        parsed_feedback["voice_quality"]["score"]
+                    ] if score is not None
+                ]
+                if component_scores:
+                    avg_score = sum(component_scores) / len(component_scores)
+                    parsed_feedback["overall"]["score"] = round(avg_score, 1)
+                
+            return parsed_feedback
+            
+        except Exception as e:
+            print(f"Error parsing detailed feedback: {e}")
+            # If parsing fails, return the raw feedback text
             return {
-                "success": False,
+                "raw_feedback": feedback_text,
                 "error": str(e)
             }
-        except json.JSONDecodeError as e:
-            print(f"JSON parsing error: {e}")
-            return {
-                "success": False,
-                "error": "Failed to parse analysis results"
-            }
-        except Exception as e:
-            print(f"Error analyzing speech: {e}")
-            # For demo purposes, return mock feedback if API fails
-            return {
-                "success": True,
-                "feedback": {
-                    "pronunciation": {
-                        "score": 8,
-                        "details": "Your pronunciation of the word 'practice' is off, and you need to work on the 'th' sound in 'thirty-three'."
-                    },
-                    "rhythm": {
-                        "score": 7,
-                        "details": "Your pacing was slightly rushed in the middle section."
-                    },
-                    "clarity": {
-                        "score": 9,
-                        "details": "Overall very clear enunciation with good volume."
-                    }
-                }
-            }
+    
+    def _extract_content(self, section_text, keywords):
+        """Helper method to extract content from a section based on keywords"""
+        for keyword in keywords:
+            pattern = rf'{keyword}[:\s]+(.+?)(?:\n|$)'
+            match = re.search(pattern, section_text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        
+        # If no specific match, return a portion of the section text
+        words = section_text.split()
+        if len(words) > 5:
+            return ' '.join(words[2:15])  # Return a portion of the text
+        return section_text[:100] if len(section_text) > 100 else section_text
 
 
 # Singleton instance
-openai_service = OpenAIService() 
+openai_service = OpenAIService()
