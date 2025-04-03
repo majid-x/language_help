@@ -653,306 +653,464 @@ function initApp() {
       // Provide visual feedback that recording is starting
       passageText.style.opacity = "0.7";
 
-      // Start recording with a callback for when recording completes
-      console.log("Starting audio recording...");
-      AudioRecorder.startRecording(function (recordingData) {
-        console.log("Recording complete, size:", recordingData.length);
+      // Get timing data from server for highlighting
+      fetch("/generate-speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ passage: text }),
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.success && data.char_timings) {
+            // Prepare the passage for highlighting
+            if (passageText) {
+              // Store the original text for later
+              const originalText = passageText.value;
 
-        // Reset button text
-        if (practiceBtn) {
-          practiceBtn.textContent = "Practice";
-          practiceBtn.classList.remove("recording-active");
-        }
+              // Replace textarea with spans for highlighting
+              passageText.style.display = "none";
 
-        // Reset opacity
-        passageText.style.opacity = "1";
-
-        // Create audio element from the recording data
-        try {
-          console.log("Processing recording data...");
-          const audioBlob = dataURItoBlob(recordingData);
-          console.log("Created audio blob, size:", audioBlob.size);
-
-          if (audioBlob.size === 0) {
-            console.error("Audio blob is empty");
-            alert("Recording failed, please try again");
-            currentMode = "idle";
-            return;
-          }
-
-          const audioUrl = URL.createObjectURL(audioBlob);
-          console.log("Created audio URL:", audioUrl);
-
-          // Release any previous recording
-          if (recordingAudio) {
-            recordingAudio.pause();
-            recordingAudio.src = "";
-            recordingAudio = null;
-          }
-
-          recordingAudio = new Audio(audioUrl);
-          recordingAudio.onloadedmetadata = function () {
-            console.log("Recording loaded, duration:", recordingAudio.duration);
-          };
-          recordingAudio.onerror = function () {
-            console.error("Error loading recording:", recordingAudio.error);
-          };
-          console.log("Created recording audio element");
-
-          // Set up playback controls for the recording
-          setupRecordingPlayback();
-        } catch (error) {
-          console.error("Error creating audio from recording:", error);
-          alert("Error processing recording: " + error.message);
-          currentMode = "idle";
-          return;
-        }
-
-        // Send the recording for analysis
-        console.log("Sending recording for analysis...");
-
-        // Get language preferences and accent goal
-        const nativeLanguage = document.getElementById("native-language")
-          ? document.getElementById("native-language").value
-          : "english";
-        const targetLanguage = document.getElementById("target-language")
-          ? document.getElementById("target-language").value
-          : "english";
-        const accentGoal = document.getElementById("accent-goal")
-          ? document.getElementById("accent-goal").value
-          : "identify";
-
-        console.log(
-          `Language preferences - Native: ${nativeLanguage}, Target: ${targetLanguage}, Accent Goal: ${accentGoal}`
-        );
-
-        fetch("/analyze-speech", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            audio: recordingData,
-            passage: text,
-            native_language: nativeLanguage,
-            target_language: targetLanguage,
-            accent_goal: accentGoal,
-          }),
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            console.log("Analysis response received:", data.success);
-
-            if (data.success) {
-              // Display feedback
-              const feedbackText = document.getElementById("feedback-text");
-              if (feedbackText) {
-                feedbackText.textContent = data.feedback.pronunciation
-                  ? data.feedback.pronunciation.details
-                  : data.feedback;
+              // Clean up any existing highlight container
+              const existingContainer = document.getElementById(
+                "highlight-container"
+              );
+              if (existingContainer) {
+                existingContainer.remove();
               }
 
-              // Add to feedback history if available
-              try {
-                if (data.feedback && typeof data.feedback === "object") {
-                  // Create a feedback item
-                  const feedbackItem = document.createElement("div");
-                  feedbackItem.className = "feedback-item";
+              const tempContainer = document.createElement("div");
+              tempContainer.id = "highlight-container";
 
-                  let content = "<h3>Practice Results</h3>";
+              // Make the container visually distinct
+              tempContainer.style.fontSize = "18px";
+              tempContainer.style.lineHeight = "1.6";
+              tempContainer.style.minHeight = "250px";
+              tempContainer.style.maxHeight = "100%";
+              tempContainer.style.overflow = "auto";
+              tempContainer.style.whiteSpace = "pre-wrap";
+              tempContainer.style.wordBreak = "break-word";
+              tempContainer.style.padding = "12px";
+              tempContainer.style.fontFamily = "Arial, sans-serif";
+              tempContainer.style.backgroundColor = "#ffffff";
+              tempContainer.style.border = "1px dashed #cccccc";
+              tempContainer.style.borderRadius = "5px";
 
-                  // Check if we have detailed structured feedback
-                  if (data.feedback.pronunciation && data.feedback.fluency) {
-                    // Enhanced feedback display
-                    content += `
-                      <div class="feedback-section">
-                        <h4>Pronunciation: ${
-                          data.feedback.pronunciation.score
-                        }/10</h4>
-                        <p><strong>Details:</strong> ${
-                          data.feedback.pronunciation.details ||
-                          "No details provided."
-                        }</p>
-                        ${
-                          data.feedback.pronunciation.tips
-                            ? `<p><strong>Tips:</strong> ${data.feedback.pronunciation.tips}</p>`
-                            : ""
-                        }
-                      </div>
+              passageText.parentNode.insertBefore(
+                tempContainer,
+                passageText.nextSibling
+              );
 
-                      <div class="feedback-section">
-                        <h4>Fluency: ${data.feedback.fluency.score}/10</h4>
-                        <p><strong>Details:</strong> ${
-                          data.feedback.fluency.details ||
-                          "No details provided."
-                        }</p>
-                        ${
-                          data.feedback.fluency.tips
-                            ? `<p><strong>Tips:</strong> ${data.feedback.fluency.tips}</p>`
-                            : ""
-                        }
-                      </div>
+              const chars = text.split("");
+              chars.forEach((char, i) => {
+                const span = document.createElement("span");
+                span.textContent = char === " " ? "\u00A0" : char;
+                span.classList.add("char");
+                span.dataset.index = i;
+                tempContainer.appendChild(span);
+              });
 
-                      ${
-                        data.feedback.grammar
-                          ? `
-                      <div class="feedback-section">
-                        <h4>Grammar: ${data.feedback.grammar.score}/10</h4>
-                        <p><strong>Details:</strong> ${
-                          data.feedback.grammar.details ||
-                          "No details provided."
-                        }</p>
-                        ${
-                          data.feedback.grammar.tips
-                            ? `<p><strong>Tips:</strong> ${data.feedback.grammar.tips}</p>`
-                            : ""
-                        }
-                      </div>`
-                          : ""
-                      }
+              // Set up character highlighting using timing data
+              const charSpans = tempContainer.querySelectorAll(".char");
 
-                      ${
-                        data.feedback.vocabulary
-                          ? `
-                      <div class="feedback-section">
-                        <h4>Vocabulary: ${
-                          data.feedback.vocabulary.score
-                        }/10</h4>
-                        <p><strong>Details:</strong> ${
-                          data.feedback.vocabulary.details ||
-                          "No details provided."
-                        }</p>
-                        ${
-                          data.feedback.vocabulary.tips
-                            ? `<p><strong>Tips:</strong> ${data.feedback.vocabulary.tips}</p>`
-                            : ""
-                        }
-                      </div>`
-                          : ""
-                      }
+              // Clear any previous highlights and timeouts
+              if (window.highlightTimeouts) {
+                window.highlightTimeouts.forEach((timeout) =>
+                  clearTimeout(timeout)
+                );
+              }
+              window.highlightTimeouts = [];
 
-                      ${
-                        data.feedback.voice_quality
-                          ? `
-                      <div class="feedback-section">
-                        <h4>Voice Quality: ${
-                          data.feedback.voice_quality.score
-                        }/10</h4>
-                        <p><strong>Details:</strong> ${
-                          data.feedback.voice_quality.details ||
-                          "No details provided."
-                        }</p>
-                        ${
-                          data.feedback.voice_quality.tips
-                            ? `<p><strong>Tips:</strong> ${data.feedback.voice_quality.tips}</p>`
-                            : ""
-                        }
-                      </div>`
-                          : ""
-                      }
+              // Set up timeouts for each character based on timing data
+              data.char_timings.forEach((timing) => {
+                if (
+                  timing &&
+                  typeof timing.char_index === "number" &&
+                  typeof timing.start_time === "number"
+                ) {
+                  const index = timing.char_index;
+                  const startTime = timing.start_time * 1000; // Convert to ms
 
-                      ${
-                        data.feedback.accent
-                          ? `
-                      <div class="feedback-section">
-                        <h4>Accent</h4>
-                        <p><strong>Identification:</strong> ${
-                          data.feedback.accent.identification ||
-                          "Not identified"
-                        }</p>
-                        <p><strong>Intensity:</strong> ${
-                          data.feedback.accent.intensity || "Not specified"
-                        }</p>
-                      </div>`
-                          : ""
-                      }
+                  if (index < charSpans.length) {
+                    const timeout = setTimeout(() => {
+                      charSpans[index].classList.add("highlighted");
+                    }, startTime);
 
-                      ${
-                        data.feedback.overall
-                          ? `
-                      <div class="feedback-section overall-feedback">
-                        <h4>Overall: ${data.feedback.overall.score}/10</h4>
-                        <p>${
-                          data.feedback.overall.summary ||
-                          "No summary provided."
-                        }</p>
-                      </div>`
-                          : ""
-                      }
-                    `;
-                  } else if (data.feedback.pronunciation) {
-                    // Legacy format for backward compatibility
-                    content += `
-                      <p><strong>Pronunciation:</strong> ${
-                        data.feedback.pronunciation.score || "N/A"
-                      }/10 - ${
-                      data.feedback.pronunciation.details || "No details"
-                    }</p>
-                      <p><strong>Rhythm:</strong> ${
-                        data.feedback.rhythm
-                          ? data.feedback.rhythm.score || "N/A"
-                          : "N/A"
-                      }/10</p>
-                      <p><strong>Clarity:</strong> ${
-                        data.feedback.clarity
-                          ? data.feedback.clarity.score || "N/A"
-                          : "N/A"
-                      }/10</p>
-                    `;
-                  } else {
-                    // Simple feedback
-                    content += `<p>${JSON.stringify(data.feedback)}</p>`;
-                  }
-
-                  feedbackItem.innerHTML = content;
-
-                  // Add to history
-                  const feedbackHistory =
-                    document.getElementById("feedback-history");
-                  if (feedbackHistory) {
-                    if (feedbackHistory.firstChild) {
-                      feedbackHistory.insertBefore(
-                        feedbackItem,
-                        feedbackHistory.firstChild
-                      );
-                    } else {
-                      feedbackHistory.appendChild(feedbackItem);
-                    }
-                  }
-
-                  // Also update the main feedback display
-                  const feedbackText = document.getElementById("feedback-text");
-                  if (feedbackText) {
-                    if (
-                      data.feedback.overall &&
-                      data.feedback.overall.summary
-                    ) {
-                      feedbackText.innerHTML = `<p><strong>Overall Score: ${data.feedback.overall.score}/10</strong></p>
-                                              <p>${data.feedback.overall.summary}</p>`;
-                    } else if (data.feedback.pronunciation) {
-                      feedbackText.textContent =
-                        data.feedback.pronunciation.details ||
-                        "Analysis complete. See detailed results below.";
-                    }
+                    window.highlightTimeouts.push(timeout);
                   }
                 }
-              } catch (e) {
-                console.error("Error creating feedback history item:", e);
-              }
-            } else {
-              console.error("Error analyzing speech:", data.error);
-              alert("Error analyzing your speech: " + data.error);
+              });
             }
 
-            currentMode = "idle";
-          })
-          .catch((error) => {
-            console.error("Error in analyze-speech request:", error);
-            alert("An error occurred during analysis. Please try again.");
+            // Start recording with a callback for when recording completes
+            console.log("Starting audio recording...");
+            AudioRecorder.startRecording(function (recordingData) {
+              console.log("Recording complete, size:", recordingData.length);
+
+              // Reset button text
+              if (practiceBtn) {
+                practiceBtn.textContent = "Practice";
+                practiceBtn.classList.remove("recording-active");
+              }
+
+              // Reset opacity
+              passageText.style.opacity = "1";
+
+              // Clear highlighting timeouts
+              if (window.highlightTimeouts) {
+                window.highlightTimeouts.forEach((timeout) =>
+                  clearTimeout(timeout)
+                );
+                window.highlightTimeouts = [];
+              }
+
+              // Restore the textarea
+              const highlightContainer = document.getElementById(
+                "highlight-container"
+              );
+              if (highlightContainer) {
+                highlightContainer.remove();
+              }
+              if (passageText) {
+                passageText.style.display = "";
+              }
+
+              // Create audio element from the recording data
+              try {
+                console.log("Processing recording data...");
+                const audioBlob = dataURItoBlob(recordingData);
+                console.log("Created audio blob, size:", audioBlob.size);
+
+                if (audioBlob.size === 0) {
+                  console.error("Audio blob is empty");
+                  alert("Recording failed, please try again");
+                  currentMode = "idle";
+                  return;
+                }
+
+                const audioUrl = URL.createObjectURL(audioBlob);
+                console.log("Created audio URL:", audioUrl);
+
+                // Release any previous recording
+                if (recordingAudio) {
+                  recordingAudio.pause();
+                  recordingAudio.src = "";
+                  recordingAudio = null;
+                }
+
+                recordingAudio = new Audio(audioUrl);
+                recordingAudio.onloadedmetadata = function () {
+                  console.log(
+                    "Recording loaded, duration:",
+                    recordingAudio.duration
+                  );
+                };
+                recordingAudio.onerror = function () {
+                  console.error(
+                    "Error loading recording:",
+                    recordingAudio.error
+                  );
+                };
+                console.log("Created recording audio element");
+
+                // Set up playback controls for the recording
+                setupRecordingPlayback();
+
+                // Store the recording data for playback
+                window.recordedAudioData = recordingData;
+
+                // Send the recording for analysis
+                console.log("Sending recording for analysis...");
+
+                // Get language preferences and accent goal
+                const nativeLanguage = document.getElementById(
+                  "native-language"
+                )
+                  ? document.getElementById("native-language").value
+                  : "english";
+                const targetLanguage = document.getElementById(
+                  "target-language"
+                )
+                  ? document.getElementById("target-language").value
+                  : "english";
+                const accentGoal = document.getElementById("accent-goal")
+                  ? document.getElementById("accent-goal").value
+                  : "identify";
+
+                console.log(
+                  `Language preferences - Native: ${nativeLanguage}, Target: ${targetLanguage}, Accent Goal: ${accentGoal}`
+                );
+
+                fetch("/analyze-speech", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    audio: recordingData,
+                    passage: text,
+                    native_language: nativeLanguage,
+                    target_language: targetLanguage,
+                    accent_goal: accentGoal,
+                  }),
+                })
+                  .then((response) => response.json())
+                  .then((data) => {
+                    console.log("Analysis response received:", data.success);
+
+                    if (data.success) {
+                      // Display feedback
+                      const feedbackText =
+                        document.getElementById("feedback-text");
+                      if (feedbackText) {
+                        feedbackText.textContent = data.feedback.pronunciation
+                          ? data.feedback.pronunciation.details
+                          : data.feedback;
+                      }
+
+                      // Add to feedback history if available
+                      try {
+                        if (
+                          data.feedback &&
+                          typeof data.feedback === "object"
+                        ) {
+                          // Create a feedback item
+                          const feedbackItem = document.createElement("div");
+                          feedbackItem.className = "feedback-item";
+
+                          let content = "<h3>Practice Results</h3>";
+
+                          // Check if we have detailed structured feedback
+                          if (
+                            data.feedback.pronunciation &&
+                            data.feedback.fluency
+                          ) {
+                            // Enhanced feedback display
+                            content += `
+                              <div class="feedback-section">
+                                <h4>Pronunciation: ${
+                                  data.feedback.pronunciation.score
+                                }/10</h4>
+                                <p><strong>Details:</strong> ${
+                                  data.feedback.pronunciation.details ||
+                                  "No details provided."
+                                }</p>
+                                ${
+                                  data.feedback.pronunciation.tips
+                                    ? `<p><strong>Tips:</strong> ${data.feedback.pronunciation.tips}</p>`
+                                    : ""
+                                }
+                              </div>
+
+                              <div class="feedback-section">
+                                <h4>Fluency: ${
+                                  data.feedback.fluency.score
+                                }/10</h4>
+                                <p><strong>Details:</strong> ${
+                                  data.feedback.fluency.details ||
+                                  "No details provided."
+                                }</p>
+                                ${
+                                  data.feedback.fluency.tips
+                                    ? `<p><strong>Tips:</strong> ${data.feedback.fluency.tips}</p>`
+                                    : ""
+                                }
+                              </div>
+
+                              ${
+                                data.feedback.grammar
+                                  ? `
+                              <div class="feedback-section">
+                                <h4>Grammar: ${
+                                  data.feedback.grammar.score
+                                }/10</h4>
+                                <p><strong>Details:</strong> ${
+                                  data.feedback.grammar.details ||
+                                  "No details provided."
+                                }</p>
+                                ${
+                                  data.feedback.grammar.tips
+                                    ? `<p><strong>Tips:</strong> ${data.feedback.grammar.tips}</p>`
+                                    : ""
+                                }
+                              </div>`
+                                  : ""
+                              }
+
+                              ${
+                                data.feedback.vocabulary
+                                  ? `
+                              <div class="feedback-section">
+                                <h4>Vocabulary: ${
+                                  data.feedback.vocabulary.score
+                                }/10</h4>
+                                <p><strong>Details:</strong> ${
+                                  data.feedback.vocabulary.details ||
+                                  "No details provided."
+                                }</p>
+                                ${
+                                  data.feedback.vocabulary.tips
+                                    ? `<p><strong>Tips:</strong> ${data.feedback.vocabulary.tips}</p>`
+                                    : ""
+                                }
+                              </div>`
+                                  : ""
+                              }
+
+                              ${
+                                data.feedback.voice_quality
+                                  ? `
+                              <div class="feedback-section">
+                                <h4>Voice Quality: ${
+                                  data.feedback.voice_quality.score
+                                }/10</h4>
+                                <p><strong>Details:</strong> ${
+                                  data.feedback.voice_quality.details ||
+                                  "No details provided."
+                                }</p>
+                                ${
+                                  data.feedback.voice_quality.tips
+                                    ? `<p><strong>Tips:</strong> ${data.feedback.voice_quality.tips}</p>`
+                                    : ""
+                                }
+                              </div>`
+                                  : ""
+                              }
+
+                              ${
+                                data.feedback.accent
+                                  ? `
+                              <div class="feedback-section">
+                                <h4>Accent</h4>
+                                <p><strong>Identification:</strong> ${
+                                  data.feedback.accent.identification ||
+                                  "Not identified"
+                                }</p>
+                                <p><strong>Intensity:</strong> ${
+                                  data.feedback.accent.intensity ||
+                                  "Not specified"
+                                }</p>
+                              </div>`
+                                  : ""
+                              }
+
+                              ${
+                                data.feedback.overall
+                                  ? `
+                              <div class="feedback-section overall-feedback">
+                                <h4>Overall: ${
+                                  data.feedback.overall.score
+                                }/10</h4>
+                                <p>${
+                                  data.feedback.overall.summary ||
+                                  "No summary provided."
+                                }</p>
+                              </div>`
+                                  : ""
+                              }
+                            `;
+                          } else if (data.feedback.pronunciation) {
+                            // Legacy format for backward compatibility
+                            content += `
+                              <p><strong>Pronunciation:</strong> ${
+                                data.feedback.pronunciation.score || "N/A"
+                              }/10 - ${
+                              data.feedback.pronunciation.details ||
+                              "No details"
+                            }</p>
+                              <p><strong>Rhythm:</strong> ${
+                                data.feedback.rhythm
+                                  ? data.feedback.rhythm.score || "N/A"
+                                  : "N/A"
+                              }/10</p>
+                              <p><strong>Clarity:</strong> ${
+                                data.feedback.clarity
+                                  ? data.feedback.clarity.score || "N/A"
+                                  : "N/A"
+                              }/10</p>
+                            `;
+                          } else {
+                            // Simple feedback
+                            content += `<p>${JSON.stringify(
+                              data.feedback
+                            )}</p>`;
+                          }
+
+                          feedbackItem.innerHTML = content;
+
+                          // Add to history
+                          const feedbackHistory =
+                            document.getElementById("feedback-history");
+                          if (feedbackHistory) {
+                            if (feedbackHistory.firstChild) {
+                              feedbackHistory.insertBefore(
+                                feedbackItem,
+                                feedbackHistory.firstChild
+                              );
+                            } else {
+                              feedbackHistory.appendChild(feedbackItem);
+                            }
+                          }
+
+                          // Also update the main feedback display
+                          const feedbackText =
+                            document.getElementById("feedback-text");
+                          if (feedbackText) {
+                            if (
+                              data.feedback.overall &&
+                              data.feedback.overall.summary
+                            ) {
+                              feedbackText.innerHTML = `<p><strong>Overall Score: ${data.feedback.overall.score}/10</strong></p>
+                                                      <p>${data.feedback.overall.summary}</p>`;
+                            } else if (data.feedback.pronunciation) {
+                              feedbackText.textContent =
+                                data.feedback.pronunciation.details ||
+                                "Analysis complete. See detailed results below.";
+                            }
+                          }
+                        }
+                      } catch (e) {
+                        console.error(
+                          "Error creating feedback history item:",
+                          e
+                        );
+                      }
+                    } else {
+                      console.error("Error analyzing speech:", data.error);
+                      alert("Error analyzing your speech: " + data.error);
+                    }
+
+                    currentMode = "idle";
+                  })
+                  .catch((error) => {
+                    console.error("Error in analyze-speech request:", error);
+                    alert(
+                      "An error occurred during analysis. Please try again."
+                    );
+                    currentMode = "idle";
+                    passageText.style.opacity = "1";
+                  });
+              } catch (error) {
+                console.error("Error creating audio from recording:", error);
+                alert("Error processing recording: " + error.message);
+                currentMode = "idle";
+                return;
+              }
+            });
+          } else {
+            console.error("Error getting timing data:", data.error);
+            alert("Error preparing practice mode. Please try again.");
             currentMode = "idle";
             passageText.style.opacity = "1";
-          });
-      });
+          }
+        })
+        .catch((error) => {
+          console.error("Error getting timing data:", error);
+          alert("Error preparing practice mode. Please try again.");
+          currentMode = "idle";
+          passageText.style.opacity = "1";
+        });
 
       console.log("Recording started successfully");
     } catch (error) {
@@ -1192,43 +1350,46 @@ function initApp() {
     console.log("Toggle playback clicked");
     if (e) e.preventDefault();
 
-    if (recordingAudio) {
-      console.log("Toggling recording audio playback");
-      if (recordingAudio.paused) {
-        recordingAudio
-          .play()
-          .then(() => {
-            console.log("Recording playback started");
-          })
-          .catch((err) => {
-            console.error("Error playing recording:", err);
-          });
-        if (playBtn) playBtn.textContent = "⏸";
-      } else {
-        recordingAudio.pause();
-        if (playBtn) playBtn.textContent = "▶";
-      }
-    } else if (audioElement) {
-      console.log("Toggling generated audio playback");
-      if (audioElement.paused) {
-        audioElement
-          .play()
-          .then(() => {
-            console.log("Generated audio playback started");
-          })
-          .catch((err) => {
-            console.error("Error playing generated audio:", err);
-          });
-        if (playBtn) playBtn.textContent = "⏸";
-      } else {
-        audioElement.pause();
-        if (playBtn) playBtn.textContent = "▶";
-      }
+    // Check if we have recorded audio data
+    if (window.recordedAudioData) {
+      console.log("Playing recorded audio");
+      playRecordedAudio(window.recordedAudioData);
+      if (playBtn) playBtn.textContent = "⏸";
     } else {
-      console.log("No audio available to play");
+      console.log("No recorded audio exists");
     }
 
     return false;
+  }
+
+  // Function to play recorded audio
+  function playRecordedAudio(audioData) {
+    try {
+      // Create a blob from the base64 audio data
+      const audioBlob = dataURItoBlob(audioData);
+
+      // Create an audio element
+      const audio = new Audio(URL.createObjectURL(audioBlob));
+
+      // Play the audio
+      audio.play().catch((error) => {
+        console.error("Error playing audio:", error);
+        alert("Error playing audio: " + error.message);
+      });
+
+      // Clean up the URL object after the audio is loaded
+      audio.onloadeddata = () => {
+        URL.revokeObjectURL(audio.src);
+      };
+
+      // Update play button text when audio ends
+      audio.onended = () => {
+        if (playBtn) playBtn.textContent = "▶";
+      };
+    } catch (error) {
+      console.error("Error creating audio blob:", error);
+      alert("Error creating audio: " + error.message);
+    }
   }
 
   // Toggle audio mute
