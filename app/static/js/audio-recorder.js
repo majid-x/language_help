@@ -39,7 +39,21 @@ const AudioRecorder = {
       .then((stream) => {
         console.log("Microphone access granted");
 
-        this.mediaRecorder = new MediaRecorder(stream);
+        // Configure MediaRecorder for WebM with Opus codec
+        const options = {
+          mimeType: "audio/webm;codecs=opus",
+          audioBitsPerSecond: 128000,
+        };
+
+        // Check if the browser supports the desired format
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+          console.warn(
+            "WebM with Opus codec not supported, falling back to default format"
+          );
+          options.mimeType = "";
+        }
+
+        this.mediaRecorder = new MediaRecorder(stream, options);
 
         this.mediaRecorder.addEventListener("dataavailable", (event) => {
           if (event.data.size > 0) {
@@ -52,7 +66,9 @@ const AudioRecorder = {
           this.isRecording = false;
 
           // Convert audio chunks to base64 data
-          const audioBlob = new Blob(this.audioChunks, { type: "audio/wav" });
+          const audioBlob = new Blob(this.audioChunks, {
+            type: "audio/webm;codecs=opus",
+          });
           const reader = new FileReader();
 
           reader.onloadend = () => {
@@ -72,7 +88,7 @@ const AudioRecorder = {
         // Start recording
         this.mediaRecorder.start();
         this.isRecording = true;
-        console.log("Recording started");
+        console.log("Recording started with format:", options.mimeType);
 
         // Automatically stop after 10 seconds
         setTimeout(() => {

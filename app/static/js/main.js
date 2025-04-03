@@ -990,7 +990,8 @@ function initApp() {
           ia[i] = byteString.charCodeAt(i);
         }
 
-        return new Blob([ab], { type: mimeString });
+        // Always convert to MP3 format
+        return new Blob([ab], { type: "audio/mp3" });
       } else {
         // Handle base64 without data URI prefix
         const byteString = atob(dataURI);
@@ -1001,12 +1002,12 @@ function initApp() {
           ia[i] = byteString.charCodeAt(i);
         }
 
-        // Assume audio/wav if no MIME type provided
-        return new Blob([ab], { type: "audio/wav" });
+        // Use audio/mp3 as default MIME type
+        return new Blob([ab], { type: "audio/mp3" });
       }
     } catch (error) {
       console.error("Error converting data URI to blob:", error);
-      return new Blob([], { type: "audio/wav" });
+      return new Blob([], { type: "audio/mp3" });
     }
   }
 

@@ -8,6 +8,7 @@ import os
 import json
 import base64
 import re
+import subprocess
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -114,6 +115,8 @@ Provide detailed, constructive feedback that is helpful, specific, and encouragi
                 2. Fluency and Coherence (pace, pauses, organization): Score out of 10 and specific details
                 3. Grammar and Vocabulary (if applicable): Score out of 10 and specific details
                 4. Voice Quality (pitch, tone, clarity): Score out of 10 and specific details
+                5. Accent Analysis: Identify the accent type and intensity
+                6. Compare what user said in comparison to the text passage
                 
                 For each category:
                 - Provide a brief summary of strengths and areas for improvement
@@ -130,35 +133,114 @@ Provide detailed, constructive feedback that is helpful, specific, and encouragi
             print(f"Text passage length: {len(text_passage)} characters")
             if native_language or target_language or accent_goal:
                 print(f"Language context: Native={native_language}, Target={target_language}, Accent Goal={accent_goal}")
+
+            # Convert to MP3 using ffmpeg
+            output_mp3 = "temp_output.mp3"
+            subprocess.run([
+                "ffmpeg", 
+                "-i", audio_file_path, 
+                "-codec:a", "libmp3lame", 
+                "-qscale:a", "2", 
+                output_mp3
+            ], check=True)
             
-            # Read the audio file
-            with open(audio_file_path, "rb") as audio_file:
-                audio_data = audio_file.read()
+            # Read the converted MP3 file
+            with open(output_mp3, "rb") as f:
+                mp3_data = f.read()
+            
+            # Clean up temporary file
+            os.remove(output_mp3)
             
             try:
                 print("Creating API request to OpenAI using SDK")
                 
-                # Base64 encode the audio file
-                audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+                # Base64 encode the MP3 file
+                audio_base64 = base64.b64encode(mp3_data).decode('utf-8')
                 
                 # Make the API call using the client library
                 response = self.client.chat.completions.create(
                     model="gpt-4o-audio-preview",
                     messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": [
-                            {"type": "text", "text": user_prompt},
-                            {"type": "input_audio", "audio_url": f"data:audio/wav;base64,{audio_base64}"}
-                        ]}
+                        {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": user_prompt},
+                                {
+                                    "type": "input_audio",
+                                    "input_audio":  {
+                                        "data": audio_base64,
+                                        "format": "mp3",
+                                    },
+                                }
+                            ]
+                        }
                     ],
-                    temperature=0.7,
-                    max_tokens=1500
+                    max_tokens=2048,
+                    temperature=0.7
                 )
                 
                 print("Successfully received feedback")
                 
                 # Extract the text content from the response
                 feedback_text = response.choices[0].message.content
+                
+                # If the feedback is empty or contains null values, try to get more detailed feedback
+                if "null/10" in feedback_text or "No details provided" in feedback_text:
+                    # Make another request with a more specific prompt
+                    detailed_prompt = f"""Please provide a detailed analysis of the speech recording. Include specific scores and examples for each category:
+
+1. Pronunciation (0-10):
+   - Specific examples of correct/incorrect pronunciations
+   - Word stress and intonation patterns
+   - Areas for improvement
+
+2. Fluency (0-10):
+   - Speaking pace
+   - Pause patterns
+   - Flow and coherence
+   - Specific examples
+
+3. Grammar (0-10):
+   - Sentence structure
+   - Tense usage
+   - Specific examples
+
+4. Voice Quality (0-10):
+   - Clarity
+   - Volume
+   - Tone
+   - Specific observations
+
+5. Accent Analysis:
+   - Identify the accent type
+   - Describe its intensity
+   - Specific characteristics
+
+Please provide concrete examples and specific suggestions for improvement."""
+
+                    response = self.client.chat.completions.create(
+                        model="gpt-4o-audio-preview",
+                        messages=[
+                            {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": detailed_prompt},
+                                    {
+                                        "type": "input_audio",
+                                        "input_audio":  {
+                                            "data": audio_base64,
+                                            "format": "mp3",
+                                        },
+                                    }
+                                ]
+                            }
+                        ],
+                        max_tokens=2048,
+                        temperature=0.7
+                    )
+                    feedback_text = response.choices[0].message.content
                 
                 # Parse the response into structured feedback
                 feedback = self.parse_detailed_feedback(feedback_text)
@@ -173,7 +255,7 @@ Provide detailed, constructive feedback that is helpful, specific, and encouragi
                 import traceback
                 print(f"Traceback: {traceback.format_exc()}")
                 raise e
-            
+
         except Exception as e:
             print(f"Unexpected error: {e}")
             import traceback
@@ -299,7 +381,12 @@ Provide detailed, constructive feedback that is helpful, specific, and encouragi
                     ] if score is not None
                 ]
                 if component_scores:
+                    # Calculate average and ensure it's out of 10
                     avg_score = sum(component_scores) / len(component_scores)
+                    # If any score is above 10, scale everything down
+                    if max(component_scores) > 10:
+                        scale_factor = 10 / max(component_scores)
+                        avg_score = avg_score * scale_factor
                     parsed_feedback["overall"]["score"] = round(avg_score, 1)
                 
             return parsed_feedback
