@@ -629,6 +629,12 @@ function initApp() {
       console.log("Already recording, stopping practice");
       if (AudioRecorder && AudioRecorder.isActive && AudioRecorder.isActive()) {
         console.log("Stopping audio recording");
+
+        // Show loading indicator when stopping recording
+        showLoadingIndicator(
+          "Processing your recording and analyzing your speech..."
+        );
+
         AudioRecorder.stopRecording();
       }
       return false;
@@ -649,6 +655,9 @@ function initApp() {
     console.log("Starting practice with text:", text.slice(0, 30) + "...");
     currentMode = "practicing";
 
+    // Disable input fields
+    disableInputsDuringRecording(true);
+
     // Check if AudioRecorder is available
     if (!window.AudioRecorder) {
       console.error("AudioRecorder not available");
@@ -656,6 +665,7 @@ function initApp() {
         "Audio recording functionality is not available. Please check your browser permissions."
       );
       currentMode = "idle";
+      disableInputsDuringRecording(false);
       return false;
     }
 
@@ -766,12 +776,19 @@ function initApp() {
                   if (index < charSpans.length) {
                     const timeout = setTimeout(() => {
                       charSpans[index].classList.add("highlighted");
+                      // Do not stop the recording when highlighting is complete!
+                      // Let the user decide when to stop by clicking the button
                     }, startTime);
 
                     window.highlightTimeouts.push(timeout);
                   }
                 }
               });
+
+              // Add this logging message to indicate highlighting setup completion
+              console.log(
+                "Highlighting timeouts setup complete. Recording will continue until stopped manually."
+              );
             }
 
             // Start recording with a callback for when recording completes
@@ -822,6 +839,7 @@ function initApp() {
                   console.error("Audio blob is empty");
                   alert("Recording failed, please try again");
                   currentMode = "idle";
+                  disableInputsDuringRecording(false);
                   return;
                 }
 
@@ -859,6 +877,9 @@ function initApp() {
                 // Send the recording for analysis
                 console.log("Sending recording for analysis...");
 
+                // Show a loading indicator in the feedback area
+                showLoadingIndicator("Analyzing your speech...");
+
                 // Get language preferences and accent goal
                 const nativeLanguage = document.getElementById(
                   "native-language"
@@ -895,14 +916,40 @@ function initApp() {
                   .then((data) => {
                     console.log("Analysis response received:", data.success);
 
+                    // Enable input fields now that processing is complete
+                    disableInputsDuringRecording(false);
+
                     if (data.success) {
                       // Display feedback
                       const feedbackText =
                         document.getElementById("feedback-text");
                       if (feedbackText) {
-                        feedbackText.textContent = data.feedback.pronunciation
-                          ? data.feedback.pronunciation.details
-                          : data.feedback;
+                        if (
+                          data.feedback.overall &&
+                          data.feedback.overall.summary
+                        ) {
+                          // Format the overall summary with proper formatting
+                          feedbackText.innerHTML = `
+                            <div class="feedback-summary">
+                              <p><strong>Overall Score: ${
+                                data.feedback.overall.score
+                              }/10</strong></p>
+                              <div class="feedback-content">${formatFeedbackText(
+                                data.feedback.overall.summary
+                              )}</div>
+                            </div>
+                          `;
+                        } else if (data.feedback.pronunciation) {
+                          // Format the pronunciation details with proper line breaks
+                          feedbackText.innerHTML = `
+                            <div class="feedback-content">
+                              ${formatFeedbackText(
+                                data.feedback.pronunciation.details ||
+                                  "No details provided."
+                              )}
+                            </div>
+                          `;
+                        }
                       }
 
                       // Add to feedback history if available
@@ -928,13 +975,15 @@ function initApp() {
                                 <h4>Pronunciation: ${
                                   data.feedback.pronunciation.score
                                 }/10</h4>
-                                <p><strong>Details:</strong> ${
+                                <p><strong>Details:</strong> ${formatFeedbackText(
                                   data.feedback.pronunciation.details ||
-                                  "No details provided."
-                                }</p>
+                                    "No details provided."
+                                )}</p>
                                 ${
                                   data.feedback.pronunciation.tips
-                                    ? `<p><strong>Tips:</strong> ${data.feedback.pronunciation.tips}</p>`
+                                    ? `<p><strong>Tips:</strong> ${formatFeedbackText(
+                                        data.feedback.pronunciation.tips
+                                      )}</p>`
                                     : ""
                                 }
                               </div>
@@ -943,13 +992,15 @@ function initApp() {
                                 <h4>Fluency: ${
                                   data.feedback.fluency.score
                                 }/10</h4>
-                                <p><strong>Details:</strong> ${
+                                <p><strong>Details:</strong> ${formatFeedbackText(
                                   data.feedback.fluency.details ||
-                                  "No details provided."
-                                }</p>
+                                    "No details provided."
+                                )}</p>
                                 ${
                                   data.feedback.fluency.tips
-                                    ? `<p><strong>Tips:</strong> ${data.feedback.fluency.tips}</p>`
+                                    ? `<p><strong>Tips:</strong> ${formatFeedbackText(
+                                        data.feedback.fluency.tips
+                                      )}</p>`
                                     : ""
                                 }
                               </div>
@@ -961,13 +1012,15 @@ function initApp() {
                                 <h4>Grammar: ${
                                   data.feedback.grammar.score
                                 }/10</h4>
-                                <p><strong>Details:</strong> ${
+                                <p><strong>Details:</strong> ${formatFeedbackText(
                                   data.feedback.grammar.details ||
-                                  "No details provided."
-                                }</p>
+                                    "No details provided."
+                                )}</p>
                                 ${
                                   data.feedback.grammar.tips
-                                    ? `<p><strong>Tips:</strong> ${data.feedback.grammar.tips}</p>`
+                                    ? `<p><strong>Tips:</strong> ${formatFeedbackText(
+                                        data.feedback.grammar.tips
+                                      )}</p>`
                                     : ""
                                 }
                               </div>`
@@ -981,13 +1034,15 @@ function initApp() {
                                 <h4>Vocabulary: ${
                                   data.feedback.vocabulary.score
                                 }/10</h4>
-                                <p><strong>Details:</strong> ${
+                                <p><strong>Details:</strong> ${formatFeedbackText(
                                   data.feedback.vocabulary.details ||
-                                  "No details provided."
-                                }</p>
+                                    "No details provided."
+                                )}</p>
                                 ${
                                   data.feedback.vocabulary.tips
-                                    ? `<p><strong>Tips:</strong> ${data.feedback.vocabulary.tips}</p>`
+                                    ? `<p><strong>Tips:</strong> ${formatFeedbackText(
+                                        data.feedback.vocabulary.tips
+                                      )}</p>`
                                     : ""
                                 }
                               </div>`
@@ -1001,13 +1056,15 @@ function initApp() {
                                 <h4>Voice Quality: ${
                                   data.feedback.voice_quality.score
                                 }/10</h4>
-                                <p><strong>Details:</strong> ${
+                                <p><strong>Details:</strong> ${formatFeedbackText(
                                   data.feedback.voice_quality.details ||
-                                  "No details provided."
-                                }</p>
+                                    "No details provided."
+                                )}</p>
                                 ${
                                   data.feedback.voice_quality.tips
-                                    ? `<p><strong>Tips:</strong> ${data.feedback.voice_quality.tips}</p>`
+                                    ? `<p><strong>Tips:</strong> ${formatFeedbackText(
+                                        data.feedback.voice_quality.tips
+                                      )}</p>`
                                     : ""
                                 }
                               </div>`
@@ -1038,10 +1095,10 @@ function initApp() {
                                 <h4>Overall: ${
                                   data.feedback.overall.score
                                 }/10</h4>
-                                <p>${
+                                <p>${formatFeedbackText(
                                   data.feedback.overall.summary ||
-                                  "No summary provided."
-                                }</p>
+                                    "No summary provided."
+                                )}</p>
                               </div>`
                                   : ""
                               }
@@ -1051,10 +1108,10 @@ function initApp() {
                             content += `
                               <p><strong>Pronunciation:</strong> ${
                                 data.feedback.pronunciation.score || "N/A"
-                              }/10 - ${
+                              }/10 - ${formatFeedbackText(
                               data.feedback.pronunciation.details ||
-                              "No details"
-                            }</p>
+                                "No details"
+                            )}</p>
                               <p><strong>Rhythm:</strong> ${
                                 data.feedback.rhythm
                                   ? data.feedback.rhythm.score || "N/A"
@@ -1093,17 +1150,8 @@ function initApp() {
                           const feedbackText =
                             document.getElementById("feedback-text");
                           if (feedbackText) {
-                            if (
-                              data.feedback.overall &&
-                              data.feedback.overall.summary
-                            ) {
-                              feedbackText.innerHTML = `<p><strong>Overall Score: ${data.feedback.overall.score}/10</strong></p>
-                                                      <p>${data.feedback.overall.summary}</p>`;
-                            } else if (data.feedback.pronunciation) {
-                              feedbackText.textContent =
-                                data.feedback.pronunciation.details ||
-                                "Analysis complete. See detailed results below.";
-                            }
+                            // Clear the main feedback area - results will be shown in the feedback history
+                            feedbackText.innerHTML = "";
                           }
                         }
                       } catch (e) {
@@ -1112,8 +1160,12 @@ function initApp() {
                           e
                         );
                       }
+
+                      // Clear the loading indicator once processing is complete
+                      clearLoadingIndicator();
                     } else {
                       console.error("Error analyzing speech:", data.error);
+                      clearLoadingIndicator();
                       alert("Error analyzing your speech: " + data.error);
                     }
 
@@ -1121,16 +1173,19 @@ function initApp() {
                   })
                   .catch((error) => {
                     console.error("Error in analyze-speech request:", error);
+                    clearLoadingIndicator();
                     alert(
                       "An error occurred during analysis. Please try again."
                     );
                     currentMode = "idle";
                     passageText.style.opacity = "1";
+                    disableInputsDuringRecording(false);
                   });
               } catch (error) {
                 console.error("Error creating audio from recording:", error);
                 alert("Error processing recording: " + error.message);
                 currentMode = "idle";
+                disableInputsDuringRecording(false);
                 return;
               }
             });
@@ -1139,6 +1194,7 @@ function initApp() {
             alert("Error preparing practice mode. Please try again.");
             currentMode = "idle";
             passageText.style.opacity = "1";
+            disableInputsDuringRecording(false);
           }
         })
         .catch((error) => {
@@ -1146,6 +1202,7 @@ function initApp() {
           alert("Error preparing practice mode. Please try again.");
           currentMode = "idle";
           passageText.style.opacity = "1";
+          disableInputsDuringRecording(false);
         });
 
       console.log("Recording started successfully");
@@ -1154,6 +1211,7 @@ function initApp() {
       alert("Could not start recording: " + error.message);
       currentMode = "idle";
       passageText.style.opacity = "1";
+      disableInputsDuringRecording(false);
 
       // Reset button if error
       if (practiceBtn) {
@@ -1163,6 +1221,42 @@ function initApp() {
     }
 
     return false;
+  }
+
+  // Function to disable/enable input fields during recording
+  function disableInputsDuringRecording(disable) {
+    // Disable the text area
+    if (passageText) {
+      passageText.disabled = disable;
+    }
+
+    // Disable language selection dropdowns
+    const nativeLanguage = document.getElementById("native-language");
+    if (nativeLanguage) {
+      nativeLanguage.disabled = disable;
+    }
+
+    const targetLanguage = document.getElementById("target-language");
+    if (targetLanguage) {
+      targetLanguage.disabled = disable;
+    }
+
+    const accentGoal = document.getElementById("accent-goal");
+    if (accentGoal) {
+      accentGoal.disabled = disable;
+    }
+
+    // Disable other buttons except the practice/stop button
+    const readToMeBtn = document.getElementById("read-btn");
+    if (readToMeBtn) {
+      readToMeBtn.disabled = disable;
+    }
+
+    // Any other buttons or inputs that should be disabled during recording
+    const clearBtn = document.getElementById("clear-btn");
+    if (clearBtn) {
+      clearBtn.disabled = disable;
+    }
   }
 
   // Helper function to convert data URI to Blob
@@ -1257,6 +1351,7 @@ function initApp() {
           displayFeedback(data.feedback);
         } else {
           console.error("Error analyzing speech:", data.error);
+          clearLoadingIndicator();
           alert("Error analyzing speech. Please try again.");
         }
       };
@@ -1274,7 +1369,15 @@ function initApp() {
 
     // Set the main feedback text
     if (feedbackText) {
-      feedbackText.textContent = feedback.pronunciation.details;
+      // Use innerHTML instead of textContent to preserve formatting
+      feedbackText.innerHTML = `
+        <div class="feedback-content">
+          ${formatFeedbackText(
+            feedback.pronunciation.details ||
+              "No pronunciation details available."
+          )}
+        </div>
+      `;
     }
 
     // Create a feedback item for history
@@ -1282,10 +1385,33 @@ function initApp() {
     feedbackItem.className = "feedback-item";
 
     const content = `
-            <p><strong>Pronunciation:</strong> ${feedback.pronunciation.score}/10 - ${feedback.pronunciation.details}</p>
-            <p><strong>Rhythm:</strong> ${feedback.rhythm.score}/10 - ${feedback.rhythm.details}</p>
-            <p><strong>Clarity:</strong> ${feedback.clarity.score}/10 - ${feedback.clarity.details}</p>
-        `;
+      <p><strong>Pronunciation:</strong> ${
+        feedback.pronunciation.score || "N/A"
+      }/10</p>
+      <div class="feedback-content">${formatFeedbackText(
+        feedback.pronunciation.details || "No details available."
+      )}</div>
+      ${
+        feedback.rhythm
+          ? `
+        <p><strong>Rhythm:</strong> ${feedback.rhythm.score || "N/A"}/10</p>
+        <div class="feedback-content">${formatFeedbackText(
+          feedback.rhythm.details || "No details available."
+        )}</div>
+      `
+          : ""
+      }
+      ${
+        feedback.clarity
+          ? `
+        <p><strong>Clarity:</strong> ${feedback.clarity.score || "N/A"}/10</p>
+        <div class="feedback-content">${formatFeedbackText(
+          feedback.clarity.details || "No details available."
+        )}</div>
+      `
+          : ""
+      }
+    `;
 
     feedbackItem.innerHTML = content;
 
@@ -1570,6 +1696,34 @@ function initApp() {
     }
 
     return false;
+  }
+
+  // Helper function to format feedback text with line breaks
+  function formatFeedbackText(text) {
+    if (!text || typeof text !== "string") return "No data available";
+    // Replace line breaks with <br> tags and ensure proper text wrapping
+    return text.trim().replace(/\n/g, "<br>");
+  }
+
+  // Show loading indicator
+  function showLoadingIndicator(message = "Processing...") {
+    const feedbackText = document.getElementById("feedback-text");
+    if (feedbackText) {
+      feedbackText.innerHTML = `
+        <div class="loading-container">
+          <div class="loading-spinner"></div>
+          <p>${message}</p>
+        </div>
+      `;
+    }
+  }
+
+  // Clear loading indicator
+  function clearLoadingIndicator() {
+    const feedbackText = document.getElementById("feedback-text");
+    if (feedbackText) {
+      feedbackText.innerHTML = "";
+    }
   }
 }
 

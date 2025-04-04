@@ -410,7 +410,14 @@ Please provide concrete examples and specific suggestions for improvement."""
             # Extract overall score and summary
             overall_match = feedback_text.find("Overall") 
             if overall_match != -1:
-                overall_section = feedback_text[overall_match:feedback_text.find("\n\n", overall_match) if feedback_text.find("\n\n", overall_match) != -1 else len(feedback_text)]
+                # Get the overall section - go to the end if no more sections are found
+                next_section = feedback_text.find("\n\n", overall_match)
+                if next_section != -1:
+                    # If there's another section after this, use that as the boundary
+                    overall_section = feedback_text[overall_match:next_section]
+                else:
+                    # If this is the last section, take everything until the end
+                    overall_section = feedback_text[overall_match:]
                 
                 # First, try to match proper score format like "7.5/10"
                 overall_score_match = re.search(r'(\d+\.\d+)(?:/10)', overall_section)
@@ -429,14 +436,23 @@ Please provide concrete examples and specific suggestions for improvement."""
                     # Handle decimal scores directly
                     parsed_feedback["overall"]["score"] = float(overall_score_match.group(1))
                 
-                # Get summary from overall section
-                summary_match = re.search(r'summary[:\s]+(.+)', overall_section, re.IGNORECASE)
+                # Try to extract summary with multiple approaches
+                # 1. Look for explicit "summary:" label
+                summary_match = re.search(r'(?:summary|overview)[:\s]+(.+)', overall_section, re.IGNORECASE | re.DOTALL)
                 if summary_match:
                     parsed_feedback["overall"]["summary"] = summary_match.group(1).strip()
                 else:
-                    # If no explicit overall summary, take a portion of the overall section
-                    if len(overall_section) > 30:
-                        parsed_feedback["overall"]["summary"] = overall_section[10:100].strip()
+                    # 2. Remove the header and use the rest as summary 
+                    lines = overall_section.strip().split('\n')
+                    if len(lines) > 1:
+                        parsed_feedback["overall"]["summary"] = '\n'.join(lines[1:]).strip()
+                    elif len(overall_section) > 30:
+                        # 3. At minimum, take a larger portion of text
+                        # Remove the "Overall" header if present
+                        cleaned_text = re.sub(r'^Overall[^:]*:?\s*', '', overall_section, flags=re.IGNORECASE)
+                        # Remove any score text
+                        cleaned_text = re.sub(r'\d+(?:\.\d+)?/10', '', cleaned_text).strip()
+                        parsed_feedback["overall"]["summary"] = cleaned_text
             
             # Calculate overall score if not found
             if parsed_feedback["overall"]["score"] is None:
@@ -469,17 +485,25 @@ Please provide concrete examples and specific suggestions for improvement."""
     
     def _extract_content(self, section_text, keywords):
         """Helper method to extract content from a section based on keywords"""
+        # First try to find content based on specific keywords
         for keyword in keywords:
-            pattern = rf'{keyword}[:\s]+(.+?)(?:\n|$)'
-            match = re.search(pattern, section_text, re.IGNORECASE)
+            # Use more comprehensive pattern with DOTALL flag to capture multiline content
+            pattern = rf'{keyword}[:\s]+(.+?)(?:\n\n(?:[A-Z]|$)|$)'
+            match = re.search(pattern, section_text, re.IGNORECASE | re.DOTALL)
             if match:
                 return match.group(1).strip()
         
-        # If no specific match, return a portion of the section text
-        words = section_text.split()
-        if len(words) > 5:
-            return ' '.join(words[2:15])  # Return a portion of the text
-        return section_text[:100] if len(section_text) > 100 else section_text
+        # If no specific keyword match found, try to extract content after the first line
+        lines = section_text.strip().split('\n')
+        if len(lines) > 1:
+            # Skip the first line (header) and join the rest
+            content = '\n'.join(lines[1:]).strip()
+            # If content starts with ":" or "-", clean it up
+            content = re.sub(r'^[:\s-]+', '', content).strip()
+            return content
+        
+        # Default to the entire section if we can't extract a better portion
+        return section_text.strip()
 
 
 # Singleton instance
