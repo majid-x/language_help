@@ -176,7 +176,6 @@ Provide detailed, constructive feedback that is helpful, specific, and encouragi
                             ]
                         }
                     ],
-                    max_tokens=2048,
                     temperature=0.7
                 )
                 
@@ -237,7 +236,6 @@ Please provide concrete examples and specific suggestions for improvement."""
                                 ]
                             }
                         ],
-                        max_tokens=2048,
                         temperature=0.7
                     )
                     feedback_text = response.choices[0].message.content
@@ -282,21 +280,49 @@ Please provide concrete examples and specific suggestions for improvement."""
             if pronunciation_match != -1:
                 # Look for score
                 pron_section = feedback_text[pronunciation_match:feedback_text.find("\n\n", pronunciation_match) if feedback_text.find("\n\n", pronunciation_match) != -1 else len(feedback_text)]
-                pron_score_match = re.search(r'(\d+)(?:/10)', pron_section)
-                if pron_score_match:
-                    parsed_feedback["pronunciation"]["score"] = int(pron_score_match.group(1))
+                
+                # First try decimal format
+                pron_score_match = re.search(r'(\d+\.\d+)(?:/10)', pron_section)
+                
+                if not pron_score_match:
+                    # Then try integer format
+                    pron_score_match = re.search(r'(\d+)(?:/10)', pron_section)
+                    
+                    if pron_score_match:
+                        score_value = int(pron_score_match.group(1))
+                        # Handle incorrectly formatted scores
+                        if score_value > 10:
+                            score_value = score_value / 10
+                        parsed_feedback["pronunciation"]["score"] = round(score_value, 1)
+                else:
+                    # Handle decimal scores directly
+                    parsed_feedback["pronunciation"]["score"] = float(pron_score_match.group(1))
                 
                 # Extract details and tips
                 parsed_feedback["pronunciation"]["details"] = self._extract_content(pron_section, ["details", "examples", "issues"])
                 parsed_feedback["pronunciation"]["tips"] = self._extract_content(pron_section, ["tips", "exercises", "improve", "practice"])
             
             # Extract fluency score
-            fluency_match = feedback_text.find("Fluency") 
+            fluency_match = feedback_text.find("Fluency")
             if fluency_match != -1:
                 fluency_section = feedback_text[fluency_match:feedback_text.find("\n\n", fluency_match) if feedback_text.find("\n\n", fluency_match) != -1 else len(feedback_text)]
-                fluency_score_match = re.search(r'(\d+)(?:/10)', fluency_section)
-                if fluency_score_match:
-                    parsed_feedback["fluency"]["score"] = int(fluency_score_match.group(1))
+                
+                # First try decimal format
+                fluency_score_match = re.search(r'(\d+\.\d+)(?:/10)', fluency_section)
+                
+                if not fluency_score_match:
+                    # Then try integer format
+                    fluency_score_match = re.search(r'(\d+)(?:/10)', fluency_section)
+                    
+                    if fluency_score_match:
+                        score_value = int(fluency_score_match.group(1))
+                        # Handle incorrectly formatted scores
+                        if score_value > 10:
+                            score_value = score_value / 10
+                        parsed_feedback["fluency"]["score"] = round(score_value, 1)
+                else:
+                    # Handle decimal scores directly
+                    parsed_feedback["fluency"]["score"] = float(fluency_score_match.group(1))
                 
                 parsed_feedback["fluency"]["details"] = self._extract_content(fluency_section, ["details", "examples", "issues"])
                 parsed_feedback["fluency"]["tips"] = self._extract_content(fluency_section, ["tips", "exercises", "improve", "practice"])
@@ -305,20 +331,48 @@ Please provide concrete examples and specific suggestions for improvement."""
             grammar_match = feedback_text.find("Grammar") 
             if grammar_match != -1:
                 grammar_section = feedback_text[grammar_match:feedback_text.find("\n\n", grammar_match) if feedback_text.find("\n\n", grammar_match) != -1 else len(feedback_text)]
-                grammar_score_match = re.search(r'(\d+)(?:/10)', grammar_section)
-                if grammar_score_match:
-                    parsed_feedback["grammar"]["score"] = int(grammar_score_match.group(1))
+                
+                # First try decimal format
+                grammar_score_match = re.search(r'(\d+\.\d+)(?:/10)', grammar_section)
+                
+                if not grammar_score_match:
+                    # Then try integer format
+                    grammar_score_match = re.search(r'(\d+)(?:/10)', grammar_section)
+                    
+                    if grammar_score_match:
+                        score_value = int(grammar_score_match.group(1))
+                        # Handle incorrectly formatted scores
+                        if score_value > 10:
+                            score_value = score_value / 10
+                        parsed_feedback["grammar"]["score"] = round(score_value, 1)
+                else:
+                    # Handle decimal scores directly
+                    parsed_feedback["grammar"]["score"] = float(grammar_score_match.group(1))
                 
                 parsed_feedback["grammar"]["details"] = self._extract_content(grammar_section, ["details", "examples", "issues"])
                 parsed_feedback["grammar"]["tips"] = self._extract_content(grammar_section, ["tips", "exercises", "improve", "practice"])
             
             # Extract voice quality score
-            voice_match = feedback_text.find("Voice Quality") 
+            voice_match = feedback_text.find("Voice Quality")
             if voice_match != -1:
                 voice_section = feedback_text[voice_match:feedback_text.find("\n\n", voice_match) if feedback_text.find("\n\n", voice_match) != -1 else len(feedback_text)]
-                voice_score_match = re.search(r'(\d+)(?:/10)', voice_section)
-                if voice_score_match:
-                    parsed_feedback["voice_quality"]["score"] = int(voice_score_match.group(1))
+                
+                # First try decimal format
+                voice_score_match = re.search(r'(\d+\.\d+)(?:/10)', voice_section)
+                
+                if not voice_score_match:
+                    # Then try integer format
+                    voice_score_match = re.search(r'(\d+)(?:/10)', voice_section)
+                    
+                    if voice_score_match:
+                        score_value = int(voice_score_match.group(1))
+                        # Handle incorrectly formatted scores
+                        if score_value > 10:
+                            score_value = score_value / 10
+                        parsed_feedback["voice_quality"]["score"] = round(score_value, 1)
+                else:
+                    # Handle decimal scores directly
+                    parsed_feedback["voice_quality"]["score"] = float(voice_score_match.group(1))
                 
                 parsed_feedback["voice_quality"]["details"] = self._extract_content(voice_section, ["details", "examples", "issues"])
                 parsed_feedback["voice_quality"]["tips"] = self._extract_content(voice_section, ["tips", "exercises", "improve", "practice"])
@@ -357,9 +411,23 @@ Please provide concrete examples and specific suggestions for improvement."""
             overall_match = feedback_text.find("Overall") 
             if overall_match != -1:
                 overall_section = feedback_text[overall_match:feedback_text.find("\n\n", overall_match) if feedback_text.find("\n\n", overall_match) != -1 else len(feedback_text)]
-                overall_score_match = re.search(r'(\d+)(?:/10)', overall_section)
-                if overall_score_match:
-                    parsed_feedback["overall"]["score"] = int(overall_score_match.group(1))
+                
+                # First, try to match proper score format like "7.5/10"
+                overall_score_match = re.search(r'(\d+\.\d+)(?:/10)', overall_section)
+                
+                if not overall_score_match:
+                    # Then try the standard integer format "7/10"
+                    overall_score_match = re.search(r'(\d+)(?:/10)', overall_section)
+                    
+                    if overall_score_match:
+                        score_value = int(overall_score_match.group(1))
+                        # If the score is greater than 10, it's likely incorrectly formatted (e.g., 75/10 should be 7.5/10)
+                        if score_value > 10:
+                            score_value = score_value / 10
+                        parsed_feedback["overall"]["score"] = round(score_value, 1)
+                else:
+                    # Handle decimal scores directly
+                    parsed_feedback["overall"]["score"] = float(overall_score_match.group(1))
                 
                 # Get summary from overall section
                 summary_match = re.search(r'summary[:\s]+(.+)', overall_section, re.IGNORECASE)

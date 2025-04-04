@@ -90,13 +90,9 @@ const AudioRecorder = {
         this.isRecording = true;
         console.log("Recording started with format:", options.mimeType);
 
-        // Automatically stop after 10 seconds
-        setTimeout(() => {
-          if (this.isRecording) {
-            console.log("Auto-stopping recording after 10 seconds");
-            this.stopRecording();
-          }
-        }, 10000);
+        // Remove the automatic stop timer completely - we want recording to continue
+        // until the user explicitly stops it by clicking the stop button
+        // No time limit for recording
       })
       .catch((error) => {
         console.error("Error accessing microphone:", error);

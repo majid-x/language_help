@@ -50,7 +50,11 @@ function initApp() {
       console.log("TextHighlighter found, initializing...");
       window.TextHighlighter.initialize(passageText, [], function () {
         console.log("Highlighting complete");
-        currentMode = "idle";
+        // Don't stop recording or change the mode when highlighting completes
+        // Only log that highlighting is complete
+        console.log(
+          "Text highlighting complete, recording continues if active"
+        );
       });
       console.log("TextHighlighter initialized successfully");
     } else {
@@ -139,15 +143,12 @@ function initApp() {
   // Handler when highlighting is complete
   function onHighlightingComplete() {
     console.log("Highlighting complete");
-    // If in practice mode, stop recording when highlighting is complete
-    if (
-      currentMode === "practicing" &&
-      AudioRecorder &&
-      AudioRecorder.isActive
-    ) {
-      AudioRecorder.stopRecording();
-    }
-    currentMode = "idle";
+    // We no longer stop recording automatically when highlighting completes
+    // Just log that highlighting is complete, but let recording continue
+    console.log(
+      "Highlighting complete, recording continues until user stops it manually"
+    );
+    // Do NOT change the mode or stop recording here
   }
 
   // Handler when recording starts
@@ -344,8 +345,8 @@ function initApp() {
           tempContainer.id = "highlight-container";
 
           // Make the container visually distinct
-          tempContainer.style.fontSize = "18px";
-          tempContainer.style.lineHeight = "1.6";
+          tempContainer.style.fontSize = "24px";
+          tempContainer.style.lineHeight = "1.8";
           tempContainer.style.minHeight = "250px";
           tempContainer.style.maxHeight = "100%";
           tempContainer.style.overflow = "auto";
@@ -354,8 +355,10 @@ function initApp() {
           tempContainer.style.padding = "12px";
           tempContainer.style.fontFamily = "Arial, sans-serif";
           tempContainer.style.backgroundColor = "#ffffff";
-          tempContainer.style.border = "1px dashed #cccccc"; // Add border for visibility
+          tempContainer.style.border = "1px dashed #cccccc";
           tempContainer.style.borderRadius = "5px";
+          tempContainer.style.letterSpacing = "0.3px";
+          tempContainer.style.wordSpacing = "1px";
 
           // Log container creation
           console.log(
@@ -376,6 +379,19 @@ function initApp() {
             span.dataset.index = i;
             tempContainer.appendChild(span);
           });
+
+          // Add a small script to ensure no character overlaps
+          const style = document.createElement("style");
+          style.textContent = `
+            .char.highlighted {
+              z-index: 1;
+            }
+            .char {
+              display: inline-block;
+              position: relative;
+            }
+          `;
+          document.head.appendChild(style);
 
           console.log("Prepared spans for highlighting:", chars.length);
         }
@@ -684,8 +700,8 @@ function initApp() {
               tempContainer.id = "highlight-container";
 
               // Make the container visually distinct
-              tempContainer.style.fontSize = "18px";
-              tempContainer.style.lineHeight = "1.6";
+              tempContainer.style.fontSize = "24px";
+              tempContainer.style.lineHeight = "1.8";
               tempContainer.style.minHeight = "250px";
               tempContainer.style.maxHeight = "100%";
               tempContainer.style.overflow = "auto";
@@ -696,6 +712,8 @@ function initApp() {
               tempContainer.style.backgroundColor = "#ffffff";
               tempContainer.style.border = "1px dashed #cccccc";
               tempContainer.style.borderRadius = "5px";
+              tempContainer.style.letterSpacing = "0.3px";
+              tempContainer.style.wordSpacing = "1px";
 
               passageText.parentNode.insertBefore(
                 tempContainer,
@@ -710,6 +728,19 @@ function initApp() {
                 span.dataset.index = i;
                 tempContainer.appendChild(span);
               });
+
+              // Add a small script to ensure no character overlaps
+              const style = document.createElement("style");
+              style.textContent = `
+                .char.highlighted {
+                  z-index: 1;
+                }
+                .char {
+                  display: inline-block;
+                  position: relative;
+                }
+              `;
+              document.head.appendChild(style);
 
               // Set up character highlighting using timing data
               const charSpans = tempContainer.querySelectorAll(".char");
@@ -745,8 +776,13 @@ function initApp() {
 
             // Start recording with a callback for when recording completes
             console.log("Starting audio recording...");
+            // Make sure recording continues until explicitly stopped
             AudioRecorder.startRecording(function (recordingData) {
-              console.log("Recording complete, size:", recordingData.length);
+              // This callback is only called when the user explicitly stops the recording
+              console.log(
+                "Recording complete (user stopped it), size:",
+                recordingData.length
+              );
 
               // Reset button text
               if (practiceBtn) {
